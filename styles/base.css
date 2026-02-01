@@ -1,0 +1,258 @@
+/* =============================================================================
+  /styles/base.css — Base + Reset + A11y (Light) — POLISHED
+  - Light-only foundations (Musicala rule)
+  - Modern reset + focus-visible
+  - Safe-area helpers
+  - No max-width constraints here
+============================================================================= */
+
+:root{
+  /* Legacy / brand aliases (keep for compatibility) */
+  --mozart:#0C41C4;
+  --bach:#220A63;
+  --brahms:#CE0071;
+
+  /* Neutral UI (fallbacks; primary tokens live in theme.css) */
+  --bg:#f7f8fc;
+  --panel:#ffffff;
+  --panel2:#fbfcff;
+
+  --ink:#101828;
+  --muted:#667085;
+  --line:#e7e9f3;
+
+  --shadow: 0 12px 30px rgba(16,24,40,.12);
+  --shadow2: 0 8px 18px rgba(16,24,40,.10);
+
+  --radius: 18px;
+  --radius2: 22px;
+
+  /* Tap + spacing tokens */
+  --tap: 44px;
+
+  /* Safe areas (iOS) */
+  --safeTop: env(safe-area-inset-top);
+  --safeBottom: env(safe-area-inset-bottom);
+
+  /* Focus ring (fallback if theme.css not loaded) */
+  --focusRing: 0 0 0 4px rgba(12,65,196,.14);
+
+  /* Page gutters */
+  --pagePad: 14px;
+
+  /* Prefer theme.css font if present */
+  --font: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Noto Sans",
+          "Apple Color Emoji","Segoe UI Emoji";
+}
+
+/* =========================
+   Reset / Defaults
+========================= */
+
+*,
+*::before,
+*::after{ box-sizing:border-box; }
+
+html, body{
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+html{
+  /* Prevent iOS text autosizing surprises */
+  -webkit-text-size-adjust: 100%;
+  text-size-adjust: 100%;
+
+  /* Smooth scroll only if allowed */
+  scroll-behavior: smooth;
+}
+
+body{
+  font-family: var(--font);
+  color: var(--ink);
+  background:
+    radial-gradient(1200px 800px at 18% -12%, rgba(12,65,196,.14), transparent 60%),
+    radial-gradient(900px 700px at 86% -4%, rgba(206,0,113,.12), transparent 56%),
+    radial-gradient(900px 600px at 50% 102%, rgba(34,10,99,.08), transparent 60%),
+    var(--bg);
+
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+
+  overflow-x: hidden;
+
+  /* Better scroll feel */
+  overscroll-behavior-y: contain;
+
+  /* A bit nicer on mobile */
+  -webkit-tap-highlight-color: transparent;
+  text-rendering: geometricPrecision;
+}
+
+/* Media elements */
+img, svg, video, canvas{
+  display: block;
+  max-width: 100%;
+  height: auto;
+}
+
+/* Form elements inherit font */
+button, input, select, textarea{
+  font: inherit;
+  color: inherit;
+}
+
+/* Make buttons behave consistently */
+button{
+  background: none;
+  border: none;
+  padding: 0;
+}
+
+/* Links */
+a{
+  color: inherit;
+  text-decoration: none;
+}
+
+/* Selection */
+::selection{
+  background: rgba(12,65,196,.18);
+}
+
+/* Hide elements consistently */
+[hidden]{ display: none !important; }
+
+/* =========================
+   Focus / Accessibility
+========================= */
+
+/* Avoid default outline; prefer focus-visible ring */
+:focus{ outline: none; }
+
+:focus-visible{
+  outline: none;
+  box-shadow: var(--focusRing);
+}
+
+/* Make sure keyboard users can see focus on anything interactive */
+a:focus-visible,
+button:focus-visible,
+input:focus-visible,
+select:focus-visible,
+textarea:focus-visible{
+  border-radius: 12px;
+}
+
+/* Skip-link: invisible until keyboard focus */
+.skiplink{
+  position: absolute;
+  left: 12px;
+  top: 10px;
+  z-index: 999999;
+
+  padding: 10px 12px;
+  border-radius: 12px;
+  background: rgba(255,255,255,.94);
+  border: 1px solid rgba(16,24,40,.12);
+  box-shadow: 0 10px 22px rgba(16,24,40,.10);
+  font-weight: 900;
+
+  transform: translateY(-140%);
+  transition: transform 180ms cubic-bezier(.2,.9,.2,1);
+}
+.skiplink:focus{
+  transform: translateY(0);
+}
+
+/* Screen-reader only utility */
+.srOnly{
+  position:absolute !important;
+  width:1px !important;
+  height:1px !important;
+  padding:0 !important;
+  margin:-1px !important;
+  overflow:hidden !important;
+  clip:rect(0,0,0,0) !important;
+  white-space:nowrap !important;
+  border:0 !important;
+}
+
+/* =========================
+   Reduced motion (global safety net)
+========================= */
+@media (prefers-reduced-motion: reduce){
+  html{ scroll-behavior: auto; }
+  *{
+    animation-duration: .001ms !important;
+    animation-iteration-count: 1 !important;
+    transition-duration: .001ms !important;
+    scroll-behavior: auto !important;
+  }
+}
+
+/* =========================
+   App root (base behavior)
+========================= */
+/* IMPORTANT: base.css should NOT enforce max-width. */
+.app{
+  width: 100%;
+  max-width: none;
+  min-height: 100vh;
+}
+
+/* Safe-area utilities */
+.safeTop{ padding-top: var(--safeTop); }
+.safeBottom{ padding-bottom: var(--safeBottom); }
+
+/* =========================
+   Desktop blocker (base only)
+   (styles exist, logic decides when to show)
+========================= */
+.desktopBlock{
+  position: fixed;
+  inset: 0;
+  background: rgba(16,24,40,.55);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+
+  display:none;
+  align-items:center;
+  justify-content:center;
+
+  z-index:9999;
+  padding: 20px;
+}
+
+.desktopCard{
+  width:min(420px, 92vw);
+  background: rgba(255,255,255,.92);
+  border:1px solid rgba(231,233,243,.85);
+  border-radius: 22px;
+  padding: 18px 18px 16px;
+  box-shadow: var(--shadow);
+  text-align:center;
+  position: relative;
+  overflow: hidden;
+}
+
+/* Subtle specular sheen so it matches the HUD feel */
+.desktopCard::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  background: linear-gradient(180deg, rgba(255,255,255,.55), rgba(255,255,255,0) 55%);
+  opacity: .55;
+  pointer-events:none;
+}
+
+.desktopEmoji{ font-size: 44px; margin: 6px 0 10px; }
+.desktopCard h2{ margin:0 0 8px; font-size: 20px; }
+.desktopCard p{ margin:0; color: var(--muted); line-height: 1.35; }
+
+/* =========================
+   Tiny utilities
+========================= */
+.muted{ color: var(--muted); }

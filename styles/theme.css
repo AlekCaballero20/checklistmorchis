@@ -1,0 +1,342 @@
+/* =============================================================================
+  /styles/theme.css — Design tokens + per-mode accents (LIGHT ONLY)
+  - Default: light premium (Musicala rule: always light UI)
+  - Per-mode accents using :root[data-mode="..."]
+  - Token system for: glass, elevation, strokes, highlights, motion, typography
+============================================================================= */
+
+:root{
+  /* =========================================================
+     CORE BACKGROUND (Light)
+  ========================================================= */
+  --bg: #f6f8ff;
+
+  /* Soft background blobs (computed) */
+  --gradSoft:
+    radial-gradient(1200px 700px at 18% -12%, rgba(12,65,196,.16), transparent 56%),
+    radial-gradient(900px 650px at 86% -8%, rgba(206,0,113,.14), transparent 54%),
+    radial-gradient(900px 600px at 50% 102%, rgba(34,10,99,.10), transparent 58%),
+    linear-gradient(180deg, rgba(255,255,255,.55), rgba(255,255,255,0) 40%);
+
+  /* =========================================================
+     SURFACES (Glass-ish)
+     Keep compatibility with existing surface vars.
+  ========================================================= */
+  --surface:  rgba(255,255,255,.90);
+  --surface2: rgba(255,255,255,.74);
+  --surface3: rgba(255,255,255,.60);
+
+  /* Extra: "HUD panels" variants (premium glass recipes) */
+  --hud:      rgba(255,255,255,.82);
+  --hud2:     rgba(255,255,255,.68);
+  --hud3:     rgba(255,255,255,.54);
+
+  /* Glass blur (soft, iOS-like) */
+  --glassBlur: 14px;
+  --glassBlur2: 20px;
+
+  /* Specular highlights (shine) */
+  --shine: rgba(255,255,255,.75);
+  --shine2: rgba(255,255,255,.40);
+  --specular:
+    linear-gradient(180deg, rgba(255,255,255,.70), rgba(255,255,255,0) 42%);
+  --specularSide:
+    radial-gradient(900px 240px at 12% 0%, rgba(255,255,255,.55), transparent 55%);
+
+  /* =========================================================
+     TEXT
+  ========================================================= */
+  --text: #0b1020;
+  --muted: rgba(11,16,32,.62);
+  --muted2: rgba(11,16,32,.48);
+
+  /* Optional: text rendering polish */
+  --textSubtle: rgba(11,16,32,.76);
+
+  /* =========================================================
+     LINES / STROKES
+  ========================================================= */
+  --line:  rgba(11,16,32,.10);
+  --line2: rgba(11,16,32,.08);
+
+  /* Premium strokes for glass edges */
+  --stroke: rgba(255,255,255,.72);
+  --stroke2: rgba(255,255,255,.46);
+  --strokeDark: rgba(11,16,32,.08);
+
+  /* =========================================================
+     OVERLAYS
+  ========================================================= */
+  --overlay: rgba(0,0,0,.44);
+  --overlay2: rgba(0,0,0,.22);
+
+  /* =========================================================
+     BRAND (Default = "salida")
+  ========================================================= */
+  --brand:  #0C41C4;
+  --brand2: #220A63;
+  --accent: #CE0071;
+
+  /* Gradient used across the UI */
+  --gradBrand: linear-gradient(135deg, rgba(12,65,196,.98), rgba(206,0,113,.92));
+
+  /* Brand glows (subtle, not neon circus) */
+  --glowBrand: 0 10px 28px rgba(12,65,196,.18);
+  --glowAccent: 0 10px 28px rgba(206,0,113,.14);
+
+  /* =========================================================
+     STATUS
+  ========================================================= */
+  --good: #22c55e;
+  --bad:  #ef4444;
+  --warn: #f59e0b;
+  --info: #06b6d4;
+
+  /* Status soft fills (for backgrounds, swipe reveals, chips) */
+  --goodSoft: rgba(34,197,94,.12);
+  --badSoft:  rgba(239,68,68,.12);
+  --warnSoft: rgba(245,158,11,.14);
+  --infoSoft: rgba(6,182,212,.12);
+
+  /* =========================================================
+     RADII + SIZES
+  ========================================================= */
+  --r12: 12px;
+  --r16: 16px;
+  --r20: 20px;
+  --r24: 24px;  /* extra for hero cards */
+  --r999: 999px;
+
+  --tap: 44px;
+
+  /* Spacing scale (for consistent HUD rhythm) */
+  --s2:  2px;
+  --s4:  4px;
+  --s6:  6px;
+  --s8:  8px;
+  --s10: 10px;
+  --s12: 12px;
+  --s14: 14px;
+  --s16: 16px;
+  --s20: 20px;
+  --s24: 24px;
+  --s28: 28px;
+  --s32: 32px;
+
+  /* =========================================================
+     TYPOGRAPHY (system-first, premium)
+  ========================================================= */
+  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, "Noto Sans", "Apple Color Emoji", "Segoe UI Emoji";
+
+  --fs12: 12px;
+  --fs13: 13px;
+  --fs14: 14px;
+  --fs16: 16px;
+  --fs18: 18px;
+  --fs20: 20px;
+
+  --lhTight: 1.15;
+  --lhBase:  1.35;
+  --lhLo:    1.55;
+
+  --wReg: 500;
+  --wMed: 600;
+  --wBold: 750;
+
+  /* =========================================================
+     SHADOWS / ELEVATION (HUD-style)
+     Keep your original shadow vars for compatibility.
+  ========================================================= */
+  --shadow:  0 10px 26px rgba(12,65,196,.10);
+  --shadow2: 0 14px 34px rgba(0,0,0,.12);
+
+  /* Elevation system (neutral + crisp) */
+  --elev0: 0 0 0 rgba(0,0,0,0);
+  --elev1: 0 10px 26px rgba(0,0,0,.08);
+  --elev2: 0 14px 34px rgba(0,0,0,.10);
+  --elev3: 0 18px 46px rgba(0,0,0,.12);
+
+  /* Inner shadows for "inventory slots" */
+  --inner1: inset 0 1px 0 rgba(255,255,255,.70);
+  --inner2: inset 0 -1px 0 rgba(11,16,32,.06);
+
+  /* =========================================================
+     FOCUS / INTERACTION
+  ========================================================= */
+  --focusRing: 0 0 0 4px rgba(12,65,196,.14);
+  --focusRing2: 0 0 0 6px rgba(206,0,113,.10);
+
+  /* Hover / pressed */
+  --hoverLift: translateY(-1px);
+  --pressLift: translateY(0px);
+  --pressScale: .985;
+
+  /* =========================================================
+     MOTION (game UI feel, not floaty)
+  ========================================================= */
+  --dur1: 120ms;
+  --dur2: 180ms;
+  --dur3: 260ms;
+  --dur4: 420ms;
+
+  /* Easing: smooth + confident */
+  --easeOut: cubic-bezier(.16, 1, .3, 1);
+  --easeIn:  cubic-bezier(.7, 0, .84, 0);
+  --easeInOut: cubic-bezier(.65, 0, .35, 1);
+
+  /* "Game snap" for toggles / tabs */
+  --easeSnap: cubic-bezier(.2, .9, .2, 1);
+
+  /* =========================================================
+     EFFECTS (shimmer, particles hooks)
+  ========================================================= */
+  --shimmer:
+    linear-gradient(110deg,
+      rgba(255,255,255,0) 0%,
+      rgba(255,255,255,.42) 22%,
+      rgba(255,255,255,0) 44%);
+
+  --sparkle: rgba(255,255,255,.80);
+  --particleSoft: rgba(12,65,196,.16);
+}
+
+/* =============================================================================
+  MODE THEMES
+  Apply to: <html data-mode="salida"> ... etc
+============================================================================= */
+
+/* Default "salida": crisp blue + magenta */
+:root[data-mode="salida"]{
+  --brand:  #0C41C4;
+  --brand2: #220A63;
+  --accent: #CE0071;
+
+  --gradBrand: linear-gradient(135deg, rgba(12,65,196,.98), rgba(206,0,113,.92));
+  --gradSoft:
+    radial-gradient(1200px 700px at 18% -12%, rgba(12,65,196,.16), transparent 56%),
+    radial-gradient(900px 650px at 86% -8%, rgba(206,0,113,.14), transparent 54%),
+    radial-gradient(900px 600px at 50% 102%, rgba(34,10,99,.10), transparent 58%),
+    linear-gradient(180deg, rgba(255,255,255,.55), rgba(255,255,255,0) 40%);
+
+  --glowBrand: 0 10px 28px rgba(12,65,196,.18);
+  --glowAccent: 0 10px 28px rgba(206,0,113,.14);
+}
+
+/* Viaje: sky blue + teal */
+:root[data-mode="viaje"]{
+  --brand:  #2563eb;
+  --brand2: #1d4ed8;
+  --accent: #06b6d4;
+
+  --gradBrand: linear-gradient(135deg, rgba(37,99,235,.98), rgba(6,182,212,.92));
+  --gradSoft:
+    radial-gradient(1200px 700px at 18% -12%, rgba(37,99,235,.16), transparent 56%),
+    radial-gradient(900px 650px at 86% -8%, rgba(6,182,212,.14), transparent 54%),
+    radial-gradient(900px 600px at 50% 102%, rgba(29,78,216,.10), transparent 58%),
+    linear-gradient(180deg, rgba(255,255,255,.55), rgba(255,255,255,0) 40%);
+
+  --glowBrand: 0 10px 28px rgba(37,99,235,.18);
+  --glowAccent: 0 10px 28px rgba(6,182,212,.14);
+}
+
+/* Gira: purple + pink */
+:root[data-mode="gira"]{
+  --brand:  #6d28d9;
+  --brand2: #312e81;
+  --accent: #ec4899;
+
+  --gradBrand: linear-gradient(135deg, rgba(109,40,217,.98), rgba(236,72,153,.92));
+  --gradSoft:
+    radial-gradient(1200px 700px at 18% -12%, rgba(109,40,217,.16), transparent 56%),
+    radial-gradient(900px 650px at 86% -8%, rgba(236,72,153,.14), transparent 54%),
+    radial-gradient(900px 600px at 50% 102%, rgba(49,46,129,.10), transparent 58%),
+    linear-gradient(180deg, rgba(255,255,255,.55), rgba(255,255,255,0) 40%);
+
+  --glowBrand: 0 10px 28px rgba(109,40,217,.18);
+  --glowAccent: 0 10px 28px rgba(236,72,153,.14);
+}
+
+/* Playa: warm sun + aqua */
+:root[data-mode="playa"]{
+  --brand:  #f59e0b;
+  --brand2: #fb7185; /* coral-ish */
+  --accent: #06b6d4;
+
+  --gradBrand: linear-gradient(135deg, rgba(245,158,11,.98), rgba(6,182,212,.92));
+  --gradSoft:
+    radial-gradient(1200px 700px at 18% -12%, rgba(245,158,11,.18), transparent 56%),
+    radial-gradient(900px 650px at 86% -8%, rgba(6,182,212,.14), transparent 54%),
+    radial-gradient(900px 600px at 50% 102%, rgba(251,113,133,.10), transparent 58%),
+    linear-gradient(180deg, rgba(255,255,255,.55), rgba(255,255,255,0) 40%);
+
+  --glowBrand: 0 10px 28px rgba(245,158,11,.18);
+  --glowAccent: 0 10px 28px rgba(6,182,212,.14);
+}
+
+/* Frío: icy blue + violet */
+:root[data-mode="frio"]{
+  --brand:  #38bdf8;
+  --brand2: #2563eb;
+  --accent: #a78bfa;
+
+  --gradBrand: linear-gradient(135deg, rgba(56,189,248,.98), rgba(167,139,250,.92));
+  --gradSoft:
+    radial-gradient(1200px 700px at 18% -12%, rgba(56,189,248,.18), transparent 56%),
+    radial-gradient(900px 650px at 86% -8%, rgba(167,139,250,.14), transparent 54%),
+    radial-gradient(900px 600px at 50% 102%, rgba(37,99,235,.10), transparent 58%),
+    linear-gradient(180deg, rgba(255,255,255,.55), rgba(255,255,255,0) 40%);
+
+  --glowBrand: 0 10px 28px rgba(56,189,248,.18);
+  --glowAccent: 0 10px 28px rgba(167,139,250,.14);
+}
+
+/* =============================================================================
+  Helper classes (optional)
+  NOTE: Safe to keep. No behavior changes, just styling utilities.
+============================================================================= */
+
+.bg-app{
+  background: var(--gradSoft), var(--bg);
+}
+
+/* Premium glass card */
+.card{
+  background: var(--surface);
+  border: 1px solid var(--stroke);
+  box-shadow: var(--elev1);
+  border-radius: var(--r20);
+  backdrop-filter: blur(var(--glassBlur));
+  -webkit-backdrop-filter: blur(var(--glassBlur));
+  position: relative;
+}
+
+/* Optional sheen overlay (use with ::before in components/app) */
+.card.is-sheen::before{
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background: var(--specular);
+  opacity: .75;
+  pointer-events: none;
+  mix-blend-mode: screen;
+}
+
+.text-muted{ color: var(--muted); }
+.text-muted2{ color: var(--muted2); }
+
+.border-soft{ border: 1px solid var(--line); }
+.border-softer{ border: 1px solid var(--line2); }
+
+/* Brand button baseline */
+.btn-brand{
+  background: var(--gradBrand);
+  color: #fff;
+  border-color: rgba(255,255,255,.18);
+  box-shadow: var(--glowBrand);
+}
+
+/* Focus ring helper */
+.ring-focus{
+  box-shadow: var(--focusRing);
+}

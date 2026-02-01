@@ -1,0 +1,1024 @@
+/* =============================================================================
+  /styles/app.css — Layout + Components (Mobile-first) — PREMIUM HUD (v2)
+  - Light only (Musicala rule)
+  - Uses tokens from theme.css (no duplicated design tokens here)
+  - Full-width real
+  - Glass HUD, inventory feel, micro-animations, pro spacing
+  - FIX: Tabs/categorías más pro (altura, alineación, scroll, active state)
+============================================================================= */
+
+/* =========================
+   Local layout tokens only
+========================= */
+:root{
+  --pad: 14px;
+  --pad2: 12px;
+  --gap: 10px;
+
+  --bbar-h: 72px;
+
+  /* Compatibility mapping (in case old CSS/markup references these) */
+  --card: var(--surface);
+  --card2: var(--surface2);
+
+  /* Micro layout helpers */
+  --hudPad: 12px;
+  --hudGap: 10px;
+
+  /* Tabs sizing */
+  --tabH: 44px;
+  --tabPadX: 12px;
+  --tabIcon: 28px;
+}
+
+/* =========================
+   Base
+========================= */
+*{ box-sizing: border-box; }
+
+html, body{
+  height: 100%;
+  width: 100%;
+  margin: 0;
+  padding: 0;
+}
+
+body{
+  font-family: var(--font);
+  color: var(--text);
+  background: var(--gradSoft), var(--bg);
+
+  -webkit-font-smoothing: antialiased;
+  -moz-osx-font-smoothing: grayscale;
+  text-rendering: geometricPrecision;
+
+  overflow-x: hidden;
+  overscroll-behavior-y: contain;
+}
+
+/* Proper “skip link”: only visible on keyboard focus */
+.skiplink{
+  position: absolute;
+  left: 12px;
+  top: 10px;
+  z-index: 999999;
+
+  padding: 10px 12px;
+  border-radius: var(--r16);
+  background: rgba(255,255,255,.94);
+  border: 1px solid rgba(11,16,32,.12);
+  box-shadow: var(--elev2);
+  color: rgba(11,16,32,.92);
+  font-weight: 900;
+  text-decoration: none;
+
+  transform: translateY(-140%);
+  transition: transform var(--dur2) var(--easeSnap);
+}
+.skiplink:focus{
+  transform: translateY(0);
+  outline: none;
+  box-shadow: var(--elev2), var(--focusRing);
+}
+
+/* app wrapper: full width, no accidental max-width box */
+.app{
+  width: 100%;
+  max-width: none;
+  min-height: 100vh;
+
+  /* prevent content under bottom bar */
+  padding-bottom: calc(var(--bbar-h) + 16px + env(safe-area-inset-bottom));
+}
+
+/* =========================
+   Desktop blocker
+========================= */
+.desktopBlock{
+  position: fixed;
+  inset: 0;
+  display: none;
+  align-items: center;
+  justify-content: center;
+  padding: 24px;
+  z-index: 99999;
+
+  background: var(--overlay);
+  backdrop-filter: blur(var(--glassBlur2));
+  -webkit-backdrop-filter: blur(var(--glassBlur2));
+}
+
+.desktopCard{
+  width: min(420px, 100%);
+  background: rgba(255,255,255,.94);
+  border: 1px solid var(--stroke);
+  border-radius: var(--r20);
+  box-shadow: var(--elev3);
+  padding: 18px 16px;
+  text-align: center;
+  position: relative;
+  overflow: hidden;
+}
+
+.desktopCard::before{
+  content:"";
+  position:absolute;
+  inset: 0;
+  background: var(--specular);
+  opacity: .8;
+  pointer-events:none;
+  mix-blend-mode: screen;
+}
+
+.desktopEmoji{ font-size: 40px; }
+.desktopCard h2{ margin: 10px 0 6px; font-size: 18px; font-weight: 900; }
+.desktopCard p{ margin: 0; color: var(--muted); font-size: 14px; line-height: 1.35; }
+
+/* =========================
+   Topbar (HUD glass)
+========================= */
+.topbar{
+  position: sticky;
+  top: 0;
+  z-index: 50;
+
+  padding: 14px var(--pad) 10px;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+
+  background: rgba(246,248,255,.74);
+  border-bottom: 1px solid rgba(11,16,32,.06);
+  backdrop-filter: blur(var(--glassBlur));
+  -webkit-backdrop-filter: blur(var(--glassBlur));
+
+  box-shadow: 0 10px 26px rgba(0,0,0,.04);
+}
+
+.topbar::before{
+  content:"";
+  position:absolute;
+  left: 0; right: 0; top: 0;
+  height: 18px;
+  background: linear-gradient(180deg, rgba(255,255,255,.70), rgba(255,255,255,0));
+  opacity: .65;
+  pointer-events:none;
+}
+
+.brand{
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  min-width: 0;
+  position: relative;
+  z-index: 1;
+}
+
+.logoDot{
+  width: 14px;
+  height: 14px;
+  border-radius: var(--r999);
+  background:
+    radial-gradient(circle at 30% 30%, #fff, rgba(255,255,255,.35) 35%, transparent 36%),
+    linear-gradient(135deg, var(--brand), var(--accent));
+  box-shadow: 0 10px 18px rgba(12,65,196,.20);
+  flex: 0 0 auto;
+}
+
+.brandText{ min-width: 0; }
+
+.brandText .title{
+  font-size: 16px;
+  font-weight: 900;
+  letter-spacing: .2px;
+  line-height: 1.1;
+}
+
+.brandText .subtitle{
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+  line-height: 1.2;
+}
+
+/* =========================
+   Hero (Stats panel / Inventory feel)
+========================= */
+.hero{
+  padding: 10px var(--pad) 6px;
+}
+
+.heroCard{
+  background: var(--hud);
+  border: 1px solid var(--stroke);
+  border-radius: var(--r24);
+  padding: 14px;
+  overflow: hidden;
+  position: relative;
+
+  box-shadow: var(--elev2);
+  backdrop-filter: blur(var(--glassBlur));
+  -webkit-backdrop-filter: blur(var(--glassBlur));
+}
+
+.heroCard::after{
+  content:"";
+  position:absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events:none;
+  box-shadow: var(--inner1), var(--inner2);
+  opacity: .9;
+}
+
+.heroCard::before{
+  content:"";
+  position:absolute;
+  inset:-2px;
+  background:
+    radial-gradient(520px 280px at 22% 0%, rgba(255,255,255,.26), transparent 58%),
+    radial-gradient(820px 320px at 110% 20%, rgba(255,255,255,.10), transparent 60%);
+  pointer-events:none;
+  opacity:.95;
+  mix-blend-mode: screen;
+}
+
+.heroTop{
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+  margin-bottom: 12px;
+}
+
+.pill, .streak{
+  display: inline-flex;
+  align-items: center;
+  gap: 8px;
+  padding: 7px 10px;
+  border-radius: var(--r999);
+  font-size: 13px;
+  font-weight: 850;
+  color: rgba(11,16,32,.92);
+  position: relative;
+  overflow: hidden;
+}
+
+.pill{
+  background: rgba(12,65,196,.10);
+  border: 1px solid rgba(12,65,196,.16);
+}
+
+.streak{
+  background: rgba(206,0,113,.10);
+  border: 1px solid rgba(206,0,113,.16);
+  min-width: 64px;
+  justify-content: center;
+}
+
+.pill::before, .streak::before{
+  content:"";
+  position:absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255,255,255,.55), rgba(255,255,255,0) 55%);
+  opacity: .55;
+  pointer-events:none;
+}
+
+.progressWrap{
+  position: relative;
+  display: grid;
+  gap: 8px;
+  margin-bottom: 12px;
+}
+
+.progressMeta{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  color: var(--muted);
+  font-size: 12px;
+  font-weight: 800;
+}
+
+.progressBar{
+  width: 100%;
+  height: 12px;
+  border-radius: var(--r999);
+  background: rgba(11,16,32,.10);
+  overflow: hidden;
+  border: 1px solid rgba(255,255,255,.55);
+  position: relative;
+}
+
+.progressBar::after{
+  content:"";
+  position:absolute;
+  inset: -2px;
+  background: var(--shimmer);
+  transform: translateX(-65%);
+  opacity: .55;
+  pointer-events:none;
+  transition: opacity var(--dur2) var(--easeOut);
+}
+
+.progressFill{
+  height: 100%;
+  width: 0%;
+  border-radius: var(--r999);
+  background: linear-gradient(90deg, var(--brand), var(--accent));
+  transition: width var(--dur3) var(--easeOut);
+  box-shadow: 0 10px 22px rgba(206,0,113,.10);
+  position: relative;
+}
+
+.progressFill::before{
+  content:"";
+  position:absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255,255,255,.35), rgba(255,255,255,0) 60%);
+  opacity: .9;
+  pointer-events:none;
+}
+
+.heroActions{
+  position: relative;
+  display: grid;
+  grid-template-columns: 1fr 1fr;
+  gap: 10px;
+}
+
+/* =========================
+   Tabs (Clean Category Rail) — FIX REAL
+========================= */
+
+.tabs{
+  padding: 6px var(--pad) 6px;
+}
+
+/* Rail más limpio y compacto */
+.tabRow{
+  display: flex;
+  gap: 8px;
+
+  overflow-x: auto;
+  overflow-y: hidden;
+  -webkit-overflow-scrolling: touch;
+
+  padding: 4px 2px 8px;
+  margin: 0;
+
+  scroll-snap-type: x mandatory;
+}
+
+.tabRow::-webkit-scrollbar{
+  display: none;
+}
+
+/* Tabs más pequeñas y pro */
+.tab{
+  scroll-snap-align: start;
+
+  height: 42px;
+  min-height: 42px;
+
+  display: inline-flex;
+  align-items: center;
+  gap: 6px;
+
+  padding: 0 14px;
+  border-radius: 999px;
+
+  font-size: 13px;
+  font-weight: 800;
+
+  background: rgba(255,255,255,.72);
+  border: 1px solid rgba(20,30,60,.10);
+
+  box-shadow: 0 6px 14px rgba(0,0,0,.04);
+
+  white-space: nowrap;
+  backdrop-filter: blur(8px);
+
+  transition: transform .15s ease, box-shadow .2s ease;
+}
+
+/* Emoji NO debe volverse cuadrote azul */
+.tab span:first-child{
+  font-size: 16px;
+  background: none !important;
+  border: none !important;
+  box-shadow: none !important;
+  width: auto !important;
+  height: auto !important;
+}
+
+/* Hover suave */
+.tab:hover{
+  transform: translateY(-1px);
+  box-shadow: 0 10px 20px rgba(0,0,0,.06);
+}
+
+/* Activa = clara y elegante */
+.tab.active{
+  background: rgba(12,65,196,.14);
+  border-color: rgba(12,65,196,.25);
+  color: rgba(12,65,196,.95);
+
+  box-shadow: 0 10px 22px rgba(12,65,196,.10);
+}
+
+
+/* =========================
+   List (Inventory slots)
+========================= */
+.list{
+  padding: 0 var(--pad) 12px;
+  display: grid;
+  gap: 10px;
+}
+
+.item{
+  position: relative;
+  background: rgba(255,255,255,.82);
+  border: 1px solid var(--stroke);
+  border-radius: var(--r16);
+  padding: 12px;
+
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 12px;
+
+  overflow: hidden;
+
+  box-shadow: 0 12px 28px rgba(0,0,0,.06);
+  backdrop-filter: blur(10px);
+  -webkit-backdrop-filter: blur(10px);
+
+  transition:
+    transform var(--dur2) var(--easeOut),
+    box-shadow var(--dur2) var(--easeOut),
+    filter var(--dur2) var(--easeOut),
+    border-color var(--dur2) var(--easeOut),
+    background var(--dur2) var(--easeOut);
+}
+
+.item::after{
+  content:"";
+  position:absolute;
+  inset: 0;
+  border-radius: inherit;
+  pointer-events:none;
+  box-shadow: inset 0 0 0 1px rgba(11,16,32,.04);
+  opacity: .9;
+}
+
+.item::before{
+  content:"";
+  position:absolute;
+  inset:-2px;
+  background:
+    radial-gradient(560px 220px at 20% 0%, rgba(255,255,255,.22), transparent 62%),
+    linear-gradient(180deg, rgba(255,255,255,.20), rgba(255,255,255,0) 46%);
+  opacity: .85;
+  pointer-events:none;
+  mix-blend-mode: screen;
+}
+
+.item:hover{
+  filter: brightness(1.01);
+  box-shadow: 0 14px 34px rgba(0,0,0,.08);
+}
+
+.item.done{
+  border-color: rgba(34,197,94,.22);
+  background: linear-gradient(180deg, rgba(34,197,94,.10), rgba(255,255,255,.72));
+}
+
+.itemLeft{
+  display: flex;
+  align-items: center;
+  gap: 12px;
+  min-width: 0;
+}
+
+.bubble{
+  width: 44px;
+  height: 44px;
+  border-radius: 14px;
+  display: grid;
+  place-items: center;
+  font-size: 20px;
+
+  background: rgba(12,65,196,.10);
+  border: 1px solid rgba(12,65,196,.14);
+
+  box-shadow: 0 10px 18px rgba(0,0,0,.05);
+  flex: 0 0 auto;
+
+  position: relative;
+  overflow: hidden;
+}
+
+.bubble::before{
+  content:"";
+  position:absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255,255,255,.55), rgba(255,255,255,0) 60%);
+  opacity: .65;
+  pointer-events:none;
+}
+
+.item.done .bubble{
+  background: rgba(34,197,94,.12);
+  border-color: rgba(34,197,94,.18);
+}
+
+.itemText{
+  min-width: 0;
+  display: grid;
+  gap: 2px;
+}
+
+.itemName{
+  font-size: 14px;
+  font-weight: 900;
+  line-height: 1.15;
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.itemMeta{
+  font-size: 12px;
+  color: var(--muted);
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+.item.done .itemName{
+  text-decoration: line-through;
+  opacity: .78;
+}
+
+.pop{
+  position: absolute;
+  inset: 0;
+  background: radial-gradient(520px 280px at 30% 0%, rgba(255,255,255,.22), transparent 55%);
+  pointer-events: none;
+  opacity: 0;
+}
+
+.item.popIt .pop{
+  opacity: 1;
+  transition: opacity var(--dur2) var(--easeOut);
+}
+
+.check{
+  width: 46px;
+  height: 28px;
+  border-radius: var(--r999);
+  background: rgba(11,16,32,.14);
+  border: 1px solid rgba(255,255,255,.55);
+  position: relative;
+  flex: 0 0 auto;
+  overflow: hidden;
+}
+
+.check::before{
+  content:"";
+  position:absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255,255,255,.20), rgba(255,255,255,0) 60%);
+  opacity: .85;
+  pointer-events:none;
+}
+
+.check .knob{
+  width: 24px;
+  height: 24px;
+  border-radius: var(--r999);
+  background: rgba(255,255,255,.94);
+  position: absolute;
+  top: 1px;
+  left: 1px;
+  box-shadow: 0 10px 18px rgba(0,0,0,.14);
+  transition: transform var(--dur3) var(--easeSnap);
+}
+
+.item.done .check{
+  background: rgba(34,197,94,.32);
+  border-color: rgba(34,197,94,.18);
+}
+
+.item.done .check .knob{
+  transform: translateX(18px);
+}
+
+/* =========================
+   Bottom bar (HUD dock)
+========================= */
+.bottombar{
+  position: fixed;
+  left: 0;
+  right: 0;
+  bottom: 0;
+  z-index: 60;
+
+  padding: 10px 12px calc(10px + env(safe-area-inset-bottom));
+  display: grid;
+  grid-template-columns: 1fr 1fr 1fr;
+  gap: 10px;
+
+  background: rgba(246,248,255,.78);
+  border-top: 1px solid rgba(11,16,32,.06);
+  backdrop-filter: blur(var(--glassBlur));
+  -webkit-backdrop-filter: blur(var(--glassBlur));
+
+  box-shadow: 0 -12px 30px rgba(0,0,0,.06);
+}
+
+.bottombar::before{
+  content:"";
+  position:absolute;
+  left: 0; right: 0; top: 0;
+  height: 18px;
+  background: linear-gradient(180deg, rgba(255,255,255,.70), rgba(255,255,255,0));
+  opacity: .55;
+  pointer-events:none;
+}
+
+/* =========================
+   Buttons (Game UI press feel)
+========================= */
+.btn, .mini{
+  appearance: none;
+  border: 1px solid rgba(11,16,32,.12);
+  background: rgba(255,255,255,.90);
+  color: rgba(11,16,32,.90);
+  border-radius: 14px;
+  min-height: var(--tap);
+  padding: 10px 12px;
+
+  font-weight: 900;
+  font-size: 13px;
+
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+  gap: 8px;
+
+  cursor: pointer;
+  user-select: none;
+  -webkit-tap-highlight-color: transparent;
+
+  position: relative;
+  overflow: hidden;
+
+  box-shadow: 0 10px 18px rgba(0,0,0,.05);
+  transition:
+    transform var(--dur1) var(--easeOut),
+    filter var(--dur2) var(--easeOut),
+    background var(--dur2) var(--easeOut),
+    border-color var(--dur2) var(--easeOut),
+    box-shadow var(--dur2) var(--easeOut);
+}
+
+.btn::before, .mini::before{
+  content:"";
+  position:absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255,255,255,.55), rgba(255,255,255,0) 60%);
+  opacity: .55;
+  pointer-events:none;
+}
+
+.btn::after, .mini::after{
+  content:"";
+  position:absolute;
+  inset: -2px;
+  background: var(--shimmer);
+  opacity: 0;
+  transform: translateX(-65%);
+  pointer-events:none;
+}
+
+.btn:hover, .mini:hover{
+  filter: brightness(1.01);
+  box-shadow: 0 12px 22px rgba(0,0,0,.06);
+}
+
+.btn:hover::after, .mini:hover::after{
+  opacity: .35;
+  transform: translateX(65%);
+  transition: transform 900ms var(--easeOut), opacity var(--dur2) var(--easeOut);
+}
+
+.btn:active, .mini:active{
+  transform: scale(var(--pressScale));
+}
+
+.btn:focus-visible,
+.mini:focus-visible,
+.tab:focus-visible,
+.input:focus-visible,
+.select:focus-visible{
+  outline: none;
+  box-shadow: var(--elev2), var(--focusRing);
+  border-color: rgba(12,65,196,.30);
+}
+
+.btn.primary{
+  background: var(--gradBrand);
+  border-color: rgba(12,65,196,.20);
+  color: #fff;
+  box-shadow: var(--glowBrand);
+}
+
+.btn.primary:hover{
+  filter: saturate(1.05) brightness(1.02);
+}
+
+.btn.ghost{
+  background: transparent;
+  border-color: rgba(11,16,32,.10);
+  box-shadow: none;
+}
+.btn.ghost::before,
+.btn.ghost::after{
+  opacity: 0;
+}
+
+.btn.danger{
+  background: var(--badSoft);
+  border-color: rgba(239,68,68,.22);
+  color: rgba(239,68,68,.95);
+}
+.btn.danger:hover{ filter: brightness(1.02); }
+
+.btn.full{ width: 100%; }
+
+.icon{ font-size: 18px; line-height: 1; }
+.btnBump{ font-size: 16px; line-height: 1; }
+
+.mini{
+  border-radius: 14px;
+  font-size: 12px;
+  padding: 10px 10px;
+}
+
+/* =========================
+   Toast
+========================= */
+.toast{
+  position: fixed;
+  left: 50%;
+  bottom: calc(var(--bbar-h) + 18px + env(safe-area-inset-bottom));
+  transform: translateX(-50%);
+  background: rgba(11,16,32,.86);
+  color: rgba(255,255,255,.96);
+  padding: 10px 12px;
+  border-radius: var(--r999);
+  font-size: 13px;
+  font-weight: 850;
+  box-shadow: 0 12px 30px rgba(0,0,0,.22);
+  max-width: min(92vw, 420px);
+  text-align: center;
+  z-index: 9999;
+
+  opacity: 0;
+  pointer-events: none;
+  transition: opacity var(--dur2) var(--easeOut), transform var(--dur2) var(--easeOut);
+}
+
+.toast.show{
+  opacity: 1;
+  pointer-events: auto;
+  transform: translateX(-50%) translateY(-2px);
+}
+
+/* =========================
+   Modal (Glass sheet)
+========================= */
+.modalOverlay{
+  position: fixed;
+  inset: 0;
+  padding: 16px;
+  display: grid;
+  place-items: center;
+  z-index: 1000;
+
+  background: var(--overlay);
+  backdrop-filter: blur(var(--glassBlur2));
+  -webkit-backdrop-filter: blur(var(--glassBlur2));
+}
+
+.modal{
+  width: min(540px, 100%);
+  background: rgba(255,255,255,.94);
+  border: 1px solid var(--stroke);
+  border-radius: var(--r20);
+  box-shadow: var(--elev3);
+  overflow: hidden;
+  position: relative;
+}
+
+.modal::before{
+  content:"";
+  position:absolute;
+  inset: 0;
+  background: var(--specular);
+  opacity: .75;
+  pointer-events:none;
+  mix-blend-mode: screen;
+}
+
+.modalHeader{
+  position: relative;
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  padding: 12px 12px;
+  border-bottom: 1px solid rgba(11,16,32,.07);
+}
+
+.modalHeader h3{
+  margin: 0;
+  font-size: 15px;
+  font-weight: 950;
+}
+
+.modalBody{
+  position: relative;
+  padding: 12px;
+  display: grid;
+  gap: 12px;
+}
+
+.settingRow{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+  gap: 14px;
+
+  padding: 10px 10px;
+  border-radius: var(--r16);
+
+  background: rgba(11,16,32,.04);
+  border: 1px solid rgba(11,16,32,.06);
+
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.55);
+}
+
+.settingRow.danger{
+  background: rgba(239,68,68,.08);
+  border-color: rgba(239,68,68,.14);
+}
+
+.settingTitle{
+  font-size: 13px;
+  font-weight: 950;
+}
+
+.settingDesc{
+  font-size: 12px;
+  color: var(--muted);
+  margin-top: 2px;
+  max-width: 280px;
+  line-height: 1.25;
+}
+
+/* =========================
+   Inputs
+========================= */
+.field{
+  display: grid;
+  gap: 6px;
+}
+
+.field span{
+  font-size: 12px;
+  font-weight: 900;
+  color: rgba(11,16,32,.82);
+}
+
+.input, .select{
+  width: 100%;
+  min-height: 46px;
+  padding: 10px 12px;
+  border-radius: 14px;
+  border: 1px solid rgba(11,16,32,.12);
+  background: rgba(255,255,255,.90);
+  outline: none;
+  font-size: 14px;
+  font-weight: 750;
+
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.55);
+  transition: box-shadow var(--dur2) var(--easeOut), border-color var(--dur2) var(--easeOut);
+}
+
+.input:focus, .select:focus{
+  border-color: rgba(12,65,196,.35);
+  box-shadow: inset 0 1px 0 rgba(255,255,255,.55), var(--focusRing);
+}
+
+/* =========================
+   Switch
+========================= */
+.switch{
+  position: relative;
+  width: 54px;
+  height: 32px;
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.switch input{
+  position: absolute;
+  inset: 0;
+  opacity: 0;
+}
+
+.slider{
+  width: 54px;
+  height: 32px;
+  border-radius: var(--r999);
+  background: rgba(11,16,32,.18);
+  border: 1px solid rgba(255,255,255,.55);
+  position: relative;
+  overflow: hidden;
+  transition: background var(--dur2) var(--easeOut), filter var(--dur2) var(--easeOut);
+}
+
+.slider::before{
+  content:"";
+  position:absolute;
+  inset: 0;
+  background: linear-gradient(180deg, rgba(255,255,255,.20), rgba(255,255,255,0) 60%);
+  opacity: .85;
+  pointer-events:none;
+}
+
+.slider::after{
+  content: "";
+  width: 26px;
+  height: 26px;
+  border-radius: var(--r999);
+  background: rgba(255,255,255,.94);
+  position: absolute;
+  top: 2px;
+  left: 2px;
+  box-shadow: 0 10px 18px rgba(0,0,0,.18);
+  transition: transform var(--dur3) var(--easeSnap);
+}
+
+.switch input:checked + .slider{
+  background: rgba(34,197,94,.34);
+}
+
+.switch input:checked + .slider::after{
+  transform: translateX(22px);
+}
+
+/* =========================
+   Small screens tweaks
+========================= */
+@media (max-width: 380px){
+  .heroActions{ grid-template-columns: 1fr; }
+  .bottombar{ grid-template-columns: 1fr; }
+  .mini{ width: 100%; }
+}
+
+/* =========================
+   Optional: slightly nicer on wide screens (still light)
+========================= */
+@media (min-width: 700px){
+  :root{ --pad: 18px; }
+  .heroCard{ padding: 16px; }
+}
+
+/* =========================
+   Reduced motion respect (still pretty, just calmer)
+========================= */
+@media (prefers-reduced-motion: reduce){
+  .tab,
+  .item,
+  .btn,
+  .mini,
+  .toast,
+  .progressFill{
+    transition: none !important;
+  }
+  .btn::after,
+  .mini::after,
+  .progressBar::after{
+    opacity: 0 !important;
+  }
+  .tabRow{
+    scroll-behavior: auto;
+  }
+}
