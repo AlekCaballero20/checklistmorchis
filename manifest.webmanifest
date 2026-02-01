@@ -6,7 +6,7 @@
 
   "lang": "es-CO",
 
-  "start_url": "./index.html",
+  "start_url": "./",
   "scope": "./",
 
   "display": "standalone",
@@ -22,15 +22,15 @@
   "icons": [
     {
       "src": "./icons/icon-192.png",
-      "sizes": "192x192",
+      "sizes": "800x800",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     },
     {
       "src": "./icons/icon-512.png",
-      "sizes": "512x512",
+      "sizes": "800x800",
       "type": "image/png",
-      "purpose": "any maskable"
+      "purpose": "any"
     }
   ]
 }
