@@ -1,0 +1,309 @@
+<!doctype html>
+<html lang="es-CO">
+<head>
+  <!-- =========================================================================
+    META CORE
+  ========================================================================= -->
+  <meta charset="utf-8" />
+  <meta name="viewport"
+        content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+
+  <title>Maleta · Checklist</title>
+  <meta name="description"
+        content="Checklist rápido, bonito y offline para no olvidar nada antes de salir." />
+
+  <!-- Theme -->
+  <meta name="theme-color" content="#0C41C4" />
+  <meta name="color-scheme" content="light" />
+
+  <!-- Evita que teléfonos conviertan números en links -->
+  <meta name="format-detection" content="telephone=no" />
+
+  <!-- =========================================================================
+    PWA + APPLE SUPPORT
+  ========================================================================= -->
+  <link rel="manifest" href="./manifest.webmanifest" />
+
+  <!-- iOS full support -->
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Maleta" />
+
+  <!-- Icons -->
+  <link rel="icon" href="./icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+
+  <!-- =========================================================================
+    STYLES (Modular System)
+  ========================================================================= -->
+  <link rel="stylesheet" href="./styles/base.css" />
+  <link rel="stylesheet" href="./styles/theme.css" />
+  <link rel="stylesheet" href="./styles/components.css" />
+  <link rel="stylesheet" href="./styles/animations.css" />
+  <link rel="stylesheet" href="./styles/app.css" />
+</head>
+
+<body>
+
+  <!-- =========================================================================
+    NOSCRIPT FALLBACK
+  ========================================================================= -->
+  <noscript>
+    <div class="noscript">
+      <div class="noscriptCard">
+        <div class="noscriptEmoji">🧠</div>
+        <h2>Se necesita JavaScript</h2>
+        <p>
+          Esta app funciona offline con lógica local.
+          Activa JavaScript y vuelve.
+        </p>
+      </div>
+    </div>
+  </noscript>
+
+  <!-- =========================================================================
+    DESKTOP BLOCKER (Mobile-first PWA)
+  ========================================================================= -->
+  <div id="desktopBlock" class="desktopBlock" aria-hidden="true">
+    <div class="desktopCard" role="dialog" aria-modal="true">
+      <div class="desktopEmoji" aria-hidden="true">📱</div>
+      <h2>Solo mobile.</h2>
+      <p>
+        Esta app está hecha para instalarse en el cel.
+        Abrila desde el teléfono y listo.
+      </p>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+    UPDATE BANNER (SW Updates)
+  ========================================================================= -->
+  <div id="updateBanner" class="updateBanner" hidden>
+    <div class="updateText">
+      <strong>Nueva versión disponible</strong>
+      <span>Actualiza para tener lo último.</span>
+    </div>
+    <div class="updateActions">
+      <button class="btn mini" id="btnUpdateLater" type="button">Luego</button>
+      <button class="btn primary mini" id="btnUpdateNow" type="button">
+        Actualizar
+      </button>
+    </div>
+  </div>
+
+  <!-- =========================================================================
+    APP ROOT
+  ========================================================================= -->
+  <main class="app" id="app">
+
+    <!-- Topbar -->
+    <header class="topbar">
+      <div class="brand" aria-label="Maleta Checklist">
+        <div class="logoDot" aria-hidden="true"></div>
+        <div class="brandText">
+          <div class="title">Maleta</div>
+          <div class="subtitle">Checklist rápido (offline)</div>
+        </div>
+      </div>
+
+      <button class="btn ghost" id="btnSettings" type="button" aria-label="Ajustes">
+        <span class="icon" aria-hidden="true">⚙️</span>
+      </button>
+    </header>
+
+    <!-- Hero -->
+    <section class="hero" aria-label="Progreso">
+      <div class="heroCard">
+
+        <div class="heroTop">
+          <div class="pill" id="tripPill">🧳 Salida</div>
+          <div class="streak" id="streakChip" title="Veces que completaste todo">
+            ✨ 0
+          </div>
+        </div>
+
+        <div class="progressWrap">
+          <div class="progressMeta" aria-live="polite">
+            <span id="progressText">0/0</span>
+            <span id="progressPct">0%</span>
+          </div>
+
+          <div class="progressBar"
+               role="progressbar"
+               aria-label="Progreso del checklist"
+               aria-valuemin="0"
+               aria-valuemax="100"
+               aria-valuenow="0">
+            <div class="progressFill" id="progressFill"></div>
+          </div>
+        </div>
+
+        <div class="heroActions">
+          <button class="btn primary" id="btnReset" type="button">
+            <span aria-hidden="true">↺</span> Reiniciar
+          </button>
+          <button class="btn" id="btnAdd" type="button">
+            <span aria-hidden="true">＋</span> Agregar
+          </button>
+        </div>
+
+      </div>
+    </section>
+
+    <!-- Tabs -->
+    <section class="tabs" aria-label="Categorías">
+      <div class="tabRow" id="tabRow" role="tablist"></div>
+    </section>
+
+    <!-- Checklist -->
+    <section class="list" id="list" aria-label="Checklist"></section>
+
+    <!-- Bottom bar -->
+    <footer class="bottombar" aria-label="Acciones rápidas">
+      <button class="mini" id="btnSelectAll" type="button">✅ Marcar todo</button>
+      <button class="mini" id="btnUncheckAll" type="button">⬜ Quitar todo</button>
+      <button class="mini" id="btnShare" type="button">📤 Compartir</button>
+    </footer>
+
+    <!-- Toast -->
+    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+
+    <!-- =========================================================================
+      SETTINGS MODAL
+    ========================================================================= -->
+    <div class="modalOverlay" id="settingsOverlay" aria-hidden="true">
+      <div class="modal" role="dialog" aria-modal="true" tabindex="-1">
+        <div class="modalHeader">
+          <h3>Ajustes</h3>
+          <button class="btn ghost" id="btnCloseSettings" type="button">✕</button>
+        </div>
+
+        <div class="modalBody">
+
+          <div class="settingRow">
+            <div>
+              <div class="settingTitle">Modo</div>
+              <div class="settingDesc">
+                Cambia el tipo de salida para checklist distinto.
+              </div>
+            </div>
+            <select id="tripMode" class="select">
+              <option value="salida">Salida</option>
+              <option value="viaje">Viaje</option>
+              <option value="gira">Gira</option>
+              <option value="playa">Playa</option>
+              <option value="frio">Clima frío</option>
+            </select>
+          </div>
+
+          <div class="settingRow">
+            <div>
+              <div class="settingTitle">Animaciones</div>
+              <div class="settingDesc">Porque sí. Cerebro feliz.</div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="toggleMotion" checked />
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="settingRow">
+            <div>
+              <div class="settingTitle">Soniditos</div>
+              <div class="settingDesc">Un tick satisfactorio al marcar.</div>
+            </div>
+            <label class="switch">
+              <input type="checkbox" id="toggleSound" checked />
+              <span class="slider"></span>
+            </label>
+          </div>
+
+          <div class="settingRow danger">
+            <div>
+              <div class="settingTitle">Borrar datos</div>
+              <div class="settingDesc">Elimina listas y progreso guardado.</div>
+            </div>
+            <button class="btn danger" id="btnWipe" type="button">
+              Borrar
+            </button>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- =========================================================================
+      ADD MODAL
+    ========================================================================= -->
+    <div class="modalOverlay" id="addOverlay" aria-hidden="true">
+      <div class="modal" role="dialog" aria-modal="true" tabindex="-1">
+        <div class="modalHeader">
+          <h3>Agregar</h3>
+          <button class="btn ghost" id="btnCloseAdd" type="button">✕</button>
+        </div>
+
+        <div class="modalBody">
+          <label class="field">
+            <span>Nombre</span>
+            <input id="newName" class="input"
+                   placeholder="Ej: Cargador, medias, crema..."
+                   maxlength="60" autocomplete="off" />
+          </label>
+
+          <label class="field">
+            <span>Categoría</span>
+            <select id="newCat" class="select"></select>
+          </label>
+
+          <label class="field">
+            <span>Emoji (opcional)</span>
+            <input id="newEmoji" class="input"
+                   placeholder="Ej: 🔌"
+                   maxlength="2" autocomplete="off" />
+          </label>
+
+          <button class="btn primary full" id="btnCreate" type="button">
+            Agregar a la lista
+          </button>
+        </div>
+      </div>
+    </div>
+
+  </main>
+
+  <!-- =========================================================================
+    APP ENTRY
+  ========================================================================= -->
+  <script type="module" src="./src/app.js"></script>
+
+  <!-- =========================================================================
+    SERVICE WORKER REGISTER + UPDATE FLOW
+  ========================================================================= -->
+  <script>
+    if ("serviceWorker" in navigator) {
+      navigator.serviceWorker.register("./sw.js").then((reg) => {
+
+        reg.addEventListener("updatefound", () => {
+          const newWorker = reg.installing;
+          newWorker.addEventListener("statechange", () => {
+            if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
+              document.getElementById("updateBanner").hidden = false;
+
+              document.getElementById("btnUpdateNow").onclick = () => {
+                newWorker.postMessage("SKIP_WAITING");
+                location.reload();
+              };
+
+              document.getElementById("btnUpdateLater").onclick = () => {
+                document.getElementById("updateBanner").hidden = true;
+              };
+            }
+          });
+        });
+
+      });
+    }
+  </script>
+
+</body>
+</html>
