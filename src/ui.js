@@ -1,9 +1,23 @@
 /* =============================================================================
-  /src/ui.js — UI glue (modals, buttons, mobile-only, focus)
-  - Mobile-only enforcement (soft) with DEV bypass
-  - Open/close modals (settings/add) + focus restore
-  - Button bindings (reset/add/settings/share/selectAll/uncheckAll/wipe)
-  - Sync settings inputs with store
+  /src/ui.js — UI glue (modals, buttons, mobile-only, focus) — PRO v6.0
+  - ✅ Mobile-only enforcement (soft) + DEV bypass
+  - ✅ Modal manager robusto:
+      - focus restore por modal
+      - focus trap
+      - ESC close
+      - click outside close
+      - scroll lock real
+      - close top-most only
+  - ✅ Button bindings seguros
+  - ✅ Sync settings inputs + sync visual de toggles
+  - ✅ Add flow: create item in selected target mode
+  - ✅ Edit flow: save item + add item to another mode
+  - ✅ Mode editor hooks alineados con HTML nuevo
+  - ✅ Safer:
+      - prevents double-submits
+      - handles missing els gracefully
+      - avoids duplicate listeners in repeated init
+      - better focusables filtering
 ============================================================================= */
 
 'use strict';
@@ -16,47 +30,87 @@
  * @param {Object} cfg.actions actions from actions.js
  * @param {Object} cfg.fx { toast, haptic, unlockAudio }
  * @param {Object} cfg.storage { wipeAllStorage? optional }
- * @param {Function} cfg.onAfterStateChange called after actions that change state (so app.js can rerender)
+ * @param {Function} cfg.onAfterStateChange called after actions that change state
  */
-export function initUI(cfg){
-  const { els, store, actions, fx, storage, onAfterStateChange } = cfg;
-
-  // Dev bypass: allow desktop testing if running on localhost or file://
+export function initUI(cfg) {
+  const { els, store, actions, fx, storage, onAfterStateChange } = cfg || {};
   const DEV_BYPASS = isDevEnv();
 
-  // Initial mobile enforcement + resize
+  if (!els) {
+    return createPublicAPI({
+      els,
+      store,
+      fx,
+      actions,
+      onAfterStateChange,
+      modal: null,
+      devBypass: DEV_BYPASS
+    });
+  }
+
   enforceMobileOnly(els, { devBypass: DEV_BYPASS });
-  window.addEventListener('resize', () => enforceMobileOnly(els, { devBypass: DEV_BYPASS }), { passive:true });
 
-  // Bind top/bottom actions
-  bindButtons({ els, store, actions, fx, storage, onAfterStateChange });
+  bindOnce(
+    window,
+    '__ui_resize_mobile_gate__',
+    'resize',
+    () => enforceMobileOnly(els, { devBypass: DEV_BYPASS }),
+    { passive: true }
+  );
 
-  // Bind modals close behaviors + focus handling
-  bindOverlays({ els, fx });
+  const modal = createModalController({ els, fx });
 
-  // Sync settings inputs initial
-  syncSettingsInputs(els, store.getState?.());
+  bindOverlays({ els, modal });
+  bindButtons({ els, actions, fx, storage, modal, onAfterStateChange, store });
+  syncSettingsInputs(els, store?.getState?.());
 
-  // Bind settings inputs
   bindSettingsInputs({ els, store, actions, fx, onAfterStateChange });
+  bindAddModal({ els, actions, fx, modal, onAfterStateChange, store });
+  bindEditModal({ els, actions, fx, modal, onAfterStateChange, store });
+  bindModeEditor({ els, store, actions, fx, modal, onAfterStateChange });
 
-  // Bind add modal create
-  bindAddModal({ els, store, actions, fx, onAfterStateChange });
-
-  // Keep inputs synced when settings change
   store?.subscribe?.((prev, next) => {
-    if (prev?.settings !== next?.settings){
+    if (prev?.settings !== next?.settings) {
       syncSettingsInputs(els, next);
     }
   });
 
+  return createPublicAPI({
+    els,
+    store,
+    fx,
+    actions,
+    onAfterStateChange,
+    modal,
+    devBypass: DEV_BYPASS
+  });
+}
+
+/* =========================
+   Public API
+========================= */
+
+function createPublicAPI({ els, store, fx, actions, onAfterStateChange, modal, devBypass }) {
   return {
-    enforceMobileOnly: () => enforceMobileOnly(els, { devBypass: DEV_BYPASS }),
-    openSettings: () => openSettings(els, fx),
-    closeSettings: () => closeSettings(els),
-    openAdd: () => openAdd(els, fx),
-    closeAdd: () => closeAdd(els),
-    sync: () => syncSettingsInputs(els, store.getState?.())
+    enforceMobileOnly: () => enforceMobileOnly(els, { devBypass }),
+
+    openSettings: (opts) => modal?.open?.('settings', opts),
+    closeSettings: () => modal?.close?.('settings'),
+
+    openAdd: (opts) => modal?.open?.('add', opts),
+    closeAdd: () => modal?.close?.('add'),
+
+    openEdit: (opts) => modal?.open?.('edit', opts),
+    closeEdit: () => modal?.close?.('edit'),
+
+    openModeEditor: (opts) => openModeEditor({
+      els, store, actions, fx, modal, onAfterStateChange, ...(opts || {})
+    }),
+    closeModeEditor: () => modal?.close?.('modeEditor'),
+
+    openEditById: (id) => openEditById({ els, store, fx, modal, id }),
+
+    sync: () => syncSettingsInputs(els, store?.getState?.())
   };
 }
 
@@ -64,142 +118,158 @@ export function initUI(cfg){
    Mobile-only enforcement
 ========================= */
 
-export function enforceMobileOnly(els, { devBypass = false } = {}){
-  // If DEV bypass, don't block desktop (lets you test on PC without suffering)
-  if (devBypass){
-    if (els.desktopBlock){
-      els.desktopBlock.style.display = 'none';
-      els.desktopBlock.setAttribute('aria-hidden', 'true');
-    }
+export function enforceMobileOnly(els, { devBypass = false } = {}) {
+  if (!els) return;
+
+  if (devBypass) {
+    hideDesktopBlock(els);
     if (els.app) els.app.style.filter = 'none';
     return;
   }
 
-  const small = matchMedia('(max-width: 820px)').matches;
+  const small = window.matchMedia?.('(max-width: 820px)')?.matches ?? true;
   const touch = ('ontouchstart' in window) || (navigator.maxTouchPoints > 0);
   const ua = (navigator.userAgent || '').toLowerCase();
   const uaMobile = /android|iphone|ipad|ipod/.test(ua);
 
   const isMobile = small && (touch || uaMobile);
 
-  if (!isMobile){
-    if (els.desktopBlock){
-      els.desktopBlock.style.display = 'flex';
-      els.desktopBlock.setAttribute('aria-hidden', 'false');
-    }
+  if (!isMobile) {
+    showDesktopBlock(els);
     if (els.app) els.app.style.filter = 'blur(3px)';
   } else {
-    if (els.desktopBlock){
-      els.desktopBlock.style.display = 'none';
-      els.desktopBlock.setAttribute('aria-hidden', 'true');
-    }
+    hideDesktopBlock(els);
     if (els.app) els.app.style.filter = 'none';
   }
 }
 
-/* =========================
-   Buttons
-========================= */
+function showDesktopBlock(els) {
+  if (!els?.desktopBlock) return;
+  els.desktopBlock.style.display = 'flex';
+  els.desktopBlock.setAttribute('aria-hidden', 'false');
+}
 
-function bindButtons({ els, store, actions, fx, storage, onAfterStateChange }){
-  els.btnReset?.addEventListener('click', () => {
-    safe(() => fx?.unlockAudio?.());
-    actions.resetChecks?.();
-    onAfterStateChange?.();
-  });
-
-  els.btnAdd?.addEventListener('click', () => {
-    safe(() => fx?.unlockAudio?.());
-    openAdd(els, fx, { returnFocusEl: els.btnAdd });
-  });
-
-  els.btnSettings?.addEventListener('click', () => {
-    safe(() => fx?.unlockAudio?.());
-    openSettings(els, fx, { returnFocusEl: els.btnSettings });
-  });
-
-  els.btnSelectAll?.addEventListener('click', () => {
-    safe(() => fx?.unlockAudio?.());
-    actions.setAll?.(true);
-    onAfterStateChange?.();
-  });
-
-  els.btnUncheckAll?.addEventListener('click', () => {
-    safe(() => fx?.unlockAudio?.());
-    actions.setAll?.(false);
-    onAfterStateChange?.();
-  });
-
-  els.btnShare?.addEventListener('click', async () => {
-    safe(() => fx?.unlockAudio?.());
-    try{
-      await actions.shareList?.();
-    }catch{}
-    // share doesn't change state usually
-  });
-
-  els.btnWipe?.addEventListener('click', () => {
-    // Soft confirm (prevents accidental "oops I deleted my life")
-    const ok = confirm('¿Seguro que quieres borrar TODO? (listas + progreso)');
-    if (!ok) return;
-
-    // optional hard wipe storage first
-    safe(() => storage?.wipeAllStorage?.());
-    actions.wipeAll?.();
-    closeSettings(els);
-    onAfterStateChange?.();
-  });
+function hideDesktopBlock(els) {
+  if (!els?.desktopBlock) return;
+  els.desktopBlock.style.display = 'none';
+  els.desktopBlock.setAttribute('aria-hidden', 'true');
 }
 
 /* =========================
-   Overlays & Modals
+   Main buttons
 ========================= */
 
-function bindOverlays({ els, fx }){
-  // Settings
-  els.btnCloseSettings?.addEventListener('click', () => closeSettings(els));
-  els.settingsOverlay?.addEventListener('click', (e) => {
-    if (e.target === els.settingsOverlay) closeSettings(els);
+function bindButtons({ els, actions, fx, storage, modal, onAfterStateChange, store }) {
+  if (!els) return;
+
+  bindClick(els.btnReset, () => {
+    safe(() => fx?.unlockAudio?.());
+    safe(() => actions?.resetChecks?.());
+    onAfterStateChange?.();
   });
 
-  // Add
-  els.btnCloseAdd?.addEventListener('click', () => closeAdd(els));
-  els.addOverlay?.addEventListener('click', (e) => {
-    if (e.target === els.addOverlay) closeAdd(els);
+  bindClick(els.btnAdd, () => {
+    safe(() => fx?.unlockAudio?.());
+
+    if (els.newModeTarget && els.tripMode) {
+      const currentMode = String(els.tripMode.value || 'salida');
+      if (selectHasValue(els.newModeTarget, currentMode)) {
+        els.newModeTarget.value = currentMode;
+      }
+    }
+
+    modal?.open?.('add', { returnFocusEl: els.btnAdd });
   });
 
-  // ESC to close
-  window.addEventListener('keydown', (e) => {
+  bindClick(els.btnSettings, () => {
+    safe(() => fx?.unlockAudio?.());
+    modal?.open?.('settings', { returnFocusEl: els.btnSettings });
+  });
+
+  bindClick(els.btnSelectAll, () => {
+    safe(() => fx?.unlockAudio?.());
+    safe(() => actions?.setAll?.(true));
+    onAfterStateChange?.();
+  });
+
+  bindClick(els.btnUncheckAll, () => {
+    safe(() => fx?.unlockAudio?.());
+    safe(() => actions?.setAll?.(false));
+    onAfterStateChange?.();
+  });
+
+  bindClick(els.btnWipe, () => {
+    const ok = confirm('¿Seguro que quieres borrar TODO? (listas + progreso)');
+    if (!ok) return;
+
+    safe(() => storage?.wipeAllStorage?.());
+    safe(() => actions?.wipeAll?.());
+    modal?.close?.('settings');
+    onAfterStateChange?.();
+  });
+
+  bindClick(resolveModeEditButton(els), () => {
+    safe(() => fx?.unlockAudio?.());
+    openModeEditor({
+      els,
+      store,
+      actions,
+      fx,
+      modal,
+      onAfterStateChange,
+      returnFocusEl: resolveModeEditButton(els)
+    });
+  }, '__modeEditMainClick__');
+}
+
+/* =========================
+   Overlay events / focus trap
+========================= */
+
+function bindOverlays({ els, modal }) {
+  if (!els || !modal) return;
+
+  bindClick(els.btnCloseSettings, () => modal.close('settings'));
+  bindClick(els.btnCloseAdd, () => modal.close('add'));
+  bindClick(els.btnCloseEdit, () => modal.close('edit'));
+  bindClick(resolveModeEditorCloseButton(els), () => modal.close('modeEditor'), '__modeEditorClose__');
+
+  bindOverlayDismiss(els.settingsOverlay, () => modal.close('settings'));
+  bindOverlayDismiss(els.addOverlay, () => modal.close('add'));
+  bindOverlayDismiss(els.editOverlay, () => modal.close('edit'));
+  bindOverlayDismiss(resolveModeEditorOverlay(els), () => modal.close('modeEditor'));
+
+  bindOnce(window, '__ui_keydown_escape__', 'keydown', (e) => {
     if (e.key !== 'Escape') return;
-    if (els.addOverlay?.classList.contains('show')) closeAdd(els);
-    if (els.settingsOverlay?.classList.contains('show')) closeSettings(els);
-  }, { passive:true });
+    if (e.isComposing) return;
 
-  // Basic focus trap inside open modals
-  window.addEventListener('keydown', (e) => {
+    const top = modal.topOpen();
+    if (!top) return;
+
+    e.preventDefault();
+    modal.close(top);
+  });
+
+  bindOnce(window, '__ui_keydown_tabtrap__', 'keydown', (e) => {
     if (e.key !== 'Tab') return;
 
-    const activeOverlay =
-      els.addOverlay?.classList.contains('show') ? els.addOverlay :
-      els.settingsOverlay?.classList.contains('show') ? els.settingsOverlay :
-      null;
+    const overlay = modal.activeOverlayEl();
+    if (!overlay) return;
 
-    if (!activeOverlay) return;
-
-    const focusables = getFocusables(activeOverlay);
+    const focusables = getFocusables(overlay);
     if (!focusables.length) return;
 
     const first = focusables[0];
     const last = focusables[focusables.length - 1];
     const active = document.activeElement;
 
-    if (e.shiftKey){
-      if (active === first || active === activeOverlay){
+    if (e.shiftKey) {
+      if (active === first || active === overlay || !overlay.contains(active)) {
         e.preventDefault();
         last.focus();
       }
     } else {
-      if (active === last){
+      if (active === last || !overlay.contains(active)) {
         e.preventDefault();
         first.focus();
       }
@@ -207,173 +277,949 @@ function bindOverlays({ els, fx }){
   });
 }
 
-let lastFocusEl = null;
-
-export function openSettings(els, fx, { returnFocusEl = null } = {}){
-  if (!els.settingsOverlay) return;
-
-  lastFocusEl = returnFocusEl || document.activeElement;
-
-  els.settingsOverlay.classList.add('show');
-  els.settingsOverlay.setAttribute('aria-hidden', 'false');
-  safe(() => fx?.haptic?.(8));
-
-  // Focus first focusable
-  setTimeout(() => {
-    const focusables = getFocusables(els.settingsOverlay);
-    (focusables[0] || els.settingsOverlay).focus?.();
-  }, 40);
+function bindOverlayDismiss(overlay, onClose) {
+  if (!overlay) return;
+  bindClick(overlay, (e) => {
+    if (e.target === overlay) onClose?.();
+  }, '__overlayDismiss__');
 }
 
-export function closeSettings(els){
-  if (!els.settingsOverlay) return;
-  els.settingsOverlay.classList.remove('show');
-  els.settingsOverlay.setAttribute('aria-hidden', 'true');
-  restoreFocus();
-}
+/* =========================
+   Modal Controller
+========================= */
 
-export function openAdd(els, fx, { returnFocusEl = null } = {}){
-  if (!els.addOverlay) return;
+function createModalController({ els, fx }) {
+  const modeEditorOverlay = resolveModeEditorOverlay(els);
 
-  lastFocusEl = returnFocusEl || document.activeElement;
+  const overlays = {
+    settings: els?.settingsOverlay || null,
+    add: els?.addOverlay || null,
+    edit: els?.editOverlay || null,
+    modeEditor: modeEditorOverlay || null
+  };
 
-  if (els.newName) els.newName.value = '';
-  if (els.newEmoji) els.newEmoji.value = '';
+  const defaultFocus = {
+    settings: () => getFocusables(overlays.settings)[0] || overlays.settings,
+    add: () => els?.newName || getFocusables(overlays.add)[0] || overlays.add,
+    edit: () => els?.editName || getFocusables(overlays.edit)[0] || overlays.edit,
+    modeEditor: () =>
+      resolveModeEditorNameInput(els) ||
+      resolveModeEditorSelect(els) ||
+      getFocusables(overlays.modeEditor)[0] ||
+      overlays.modeEditor
+  };
 
-  els.addOverlay.classList.add('show');
-  els.addOverlay.setAttribute('aria-hidden', 'false');
+  let stack = [];
+  const returnFocusMap = new Map();
 
-  setTimeout(() => els.newName?.focus(), 60);
-  safe(() => fx?.haptic?.(8));
-}
+  function lockScroll() {
+    try {
+      const scrollY = window.scrollY || window.pageYOffset || 0;
+      document.documentElement.classList.add('modal-open');
+      document.body.classList.add('modal-open');
+      document.body.dataset.modalScrollY = String(scrollY);
+      document.body.style.top = `-${scrollY}px`;
+    } catch {}
+  }
 
-export function closeAdd(els){
-  if (!els.addOverlay) return;
-  els.addOverlay.classList.remove('show');
-  els.addOverlay.setAttribute('aria-hidden', 'true');
-  restoreFocus();
-}
+  function unlockScroll() {
+    try {
+      const scrollY = Number(document.body?.dataset?.modalScrollY || 0);
 
-function restoreFocus(){
-  try{
-    if (lastFocusEl && typeof lastFocusEl.focus === 'function'){
-      lastFocusEl.focus();
+      document.documentElement.classList.remove('modal-open');
+      document.body.classList.remove('modal-open');
+      document.body.style.top = '';
+
+      window.scrollTo?.(0, Number.isFinite(scrollY) ? scrollY : 0);
+
+      delete document.body.dataset.modalScrollY;
+    } catch {}
+  }
+
+  function isOpen(name) {
+    const overlay = overlays[name];
+    return !!(overlay && overlay.classList.contains('show'));
+  }
+
+  function open(name, opts = {}) {
+    const overlay = overlays[name];
+    if (!overlay) return;
+
+    prepareModalOpen(name, els, overlay);
+
+    const returnFocusEl = opts.returnFocusEl || document.activeElement || null;
+    const focusEl = opts.focusEl || null;
+
+    returnFocusMap.set(name, returnFocusEl);
+
+    overlay.classList.add('show');
+    overlay.setAttribute('aria-hidden', 'false');
+
+    stack = stack.filter(x => x !== name);
+    stack.push(name);
+
+    if (stack.length === 1) lockScroll();
+
+    safe(() => fx?.haptic?.(8));
+
+    requestAnimationFrame(() => {
+      setTimeout(() => {
+        if (!isOpen(name)) return;
+
+        if (focusEl?.focus) {
+          safe(() => focusEl.focus());
+          return;
+        }
+
+        const f = defaultFocus[name]?.();
+        safe(() => f?.focus?.());
+      }, 24);
+    });
+  }
+
+  function close(name) {
+    const overlay = overlays[name];
+    if (!overlay || !isOpen(name)) return;
+
+    overlay.classList.remove('show');
+    overlay.setAttribute('aria-hidden', 'true');
+
+    cleanupModalClose(name, overlay);
+
+    stack = stack.filter(x => x !== name);
+
+    if (!stack.length) {
+      unlockScroll();
+    } else {
+      const nextTop = stack[stack.length - 1];
+      const nextOverlay = overlays[nextTop];
+      if (nextOverlay) {
+        setTimeout(() => {
+          const f = defaultFocus[nextTop]?.();
+          safe(() => f?.focus?.());
+        }, 12);
+      }
     }
-  }catch{}
-  lastFocusEl = null;
+
+    restoreFocus(name);
+  }
+
+  function restoreFocus(name) {
+    const el = returnFocusMap.get(name) || null;
+    returnFocusMap.delete(name);
+
+    if (stack.length) return;
+
+    try {
+      if (el && typeof el.focus === 'function') {
+        el.focus();
+      }
+    } catch {}
+  }
+
+  function topOpen() {
+    return stack.length ? stack[stack.length - 1] : null;
+  }
+
+  function activeOverlayEl() {
+    const top = topOpen();
+    return top ? overlays[top] : null;
+  }
+
+  return {
+    open,
+    close,
+    topOpen,
+    activeOverlayEl,
+    isOpen
+  };
+}
+
+function prepareModalOpen(name, els, overlay) {
+  if (!overlay) return;
+
+  if (name === 'add') {
+    if (els?.newName) els.newName.value = '';
+    if (els?.newEmoji) els.newEmoji.value = '';
+    if (els?.newModeTarget && els?.tripMode) {
+      const currentMode = String(els.tripMode.value || 'salida');
+      if (selectHasValue(els.newModeTarget, currentMode)) {
+        els.newModeTarget.value = currentMode;
+      }
+    }
+  }
+
+  if (name === 'edit') {
+    if (overlay.dataset && overlay.dataset.editingId == null) overlay.dataset.editingId = '';
+  }
+
+  if (name === 'modeEditor') {
+    if (overlay.dataset && overlay.dataset.modeKey == null) overlay.dataset.modeKey = '';
+  }
+}
+
+function cleanupModalClose(name, overlay) {
+  if (!overlay) return;
+
+  if (name === 'edit' && overlay.dataset) {
+    overlay.dataset.editingId = '';
+  }
+
+  if (name === 'modeEditor' && overlay.dataset) {
+    overlay.dataset.modeKey = '';
+  }
 }
 
 /* =========================
    Settings inputs
 ========================= */
 
-function syncSettingsInputs(els, state){
+function syncSettingsInputs(els, state) {
+  if (!els) return;
   const s = state?.settings || {};
+
   if (els.tripMode) els.tripMode.value = s.tripMode || 'salida';
-  if (els.toggleMotion) els.toggleMotion.checked = !!s.motion;
-  if (els.toggleSound) els.toggleSound.checked = !!s.sound;
-  if (els.streakChip) els.streakChip.textContent = `✨ ${s.streak || 0}`;
+
+  const motion = !!s.motion;
+  const sound = !!s.sound;
+
+  if (els.toggleMotion) {
+    els.toggleMotion.checked = motion;
+    syncToggleVisualState(els.toggleMotion, motion);
+  }
+
+  if (els.toggleSound) {
+    els.toggleSound.checked = sound;
+    syncToggleVisualState(els.toggleSound, sound);
+  }
+
+  if (els.streakChip) {
+    const n = Number(s.streak || 0);
+    els.streakChip.textContent = `✨ ${Number.isFinite(n) ? n : 0}`;
+  }
+
+  if (els.newModeTarget && els.tripMode && selectHasValue(els.newModeTarget, s.tripMode || 'salida')) {
+    els.newModeTarget.value = s.tripMode || 'salida';
+  }
 }
 
-function bindSettingsInputs({ els, store, actions, fx, onAfterStateChange }){
-  els.tripMode?.addEventListener('change', () => {
-    const mode = els.tripMode.value;
+function bindSettingsInputs({ els, store, actions, fx, onAfterStateChange }) {
+  if (!els) return;
 
-    // actions.changeMode already toasts/haptics (avoid double spam)
-    actions.changeMode?.(mode);
+  bindChange(els.tripMode, () => {
+    const mode = String(els.tripMode.value || 'salida');
+    safe(() => actions?.changeMode?.(mode));
     onAfterStateChange?.();
   });
 
-  els.toggleMotion?.addEventListener('change', () => {
-    store.setState?.((prev) => ({
-      ...prev,
-      settings: { ...prev.settings, motion: !!els.toggleMotion.checked }
-    }));
+  bindToggleChange(els.toggleMotion, ({ checked }) => {
+    if (typeof actions?.setMotion === 'function') {
+      actions.setMotion(checked);
+    } else {
+      store?.setState?.((prev) => ({
+        ...prev,
+        settings: { ...(prev.settings || {}), motion: checked }
+      }));
+    }
 
-    safe(() => fx?.toast?.(els.toggleMotion.checked ? 'Animaciones ON ✨' : 'Animaciones OFF 🧊'));
+    safe(() => fx?.toast?.(checked ? 'Animaciones ON ✨' : 'Animaciones OFF 🧊'));
     safe(() => fx?.haptic?.(12));
     onAfterStateChange?.();
   });
 
-  els.toggleSound?.addEventListener('change', () => {
-    store.setState?.((prev) => ({
-      ...prev,
-      settings: { ...prev.settings, sound: !!els.toggleSound.checked }
-    }));
+  bindToggleChange(els.toggleSound, ({ checked }) => {
+    if (typeof actions?.setSound === 'function') {
+      actions.setSound(checked);
+    } else {
+      store?.setState?.((prev) => ({
+        ...prev,
+        settings: { ...(prev.settings || {}), sound: checked }
+      }));
+    }
 
-    safe(() => fx?.toast?.(els.toggleSound.checked ? 'Sonidito ON 🔔' : 'Sonidito OFF 🤫'));
+    safe(() => fx?.toast?.(checked ? 'Sonidito ON 🔔' : 'Sonidito OFF 🤫'));
+    safe(() => fx?.haptic?.(10));
+    onAfterStateChange?.();
   });
 }
 
 /* =========================
-   Add modal create
+   Add modal
 ========================= */
 
-function bindAddModal({ els, store, actions, fx, onAfterStateChange }){
-  els.btnCreate?.addEventListener('click', () => {
-    const name  = (els.newName?.value || '').trim();
+function bindAddModal({ els, actions, fx, modal, onAfterStateChange, store }) {
+  if (!els) return;
+
+  let busy = false;
+
+  const doCreate = () => {
+    if (busy) return;
+    busy = true;
+
+    const name = (els.newName?.value || '').trim();
     const emoji = (els.newEmoji?.value || '').trim();
-    const cat   = els.newCat?.value || 'otros';
+    const cat = String(els.newCat?.value || 'otros');
+    const targetMode = String(
+      els.newModeTarget?.value ||
+      store?.getState?.()?.settings?.tripMode ||
+      'salida'
+    );
 
-    const res = actions.createItem?.({
-      name,
-      emoji,
-      cat
-    });
+    const res = actions?.createItem?.({ name, emoji, cat, targetMode });
 
-    if (!res?.ok){
-      // Shake modal if empty name and motion is on
-      const motion = !!store.getState?.()?.settings?.motion;
-      if (motion){
-        const modal = els.addOverlay?.querySelector('.modal');
-        if (modal){
-          modal.classList.remove('shake');
-          void modal.offsetWidth; // reflow to restart anim
-          modal.classList.add('shake');
-        }
-      }
+    if (!res?.ok) {
+      shakeIfMotion({ store, overlay: els.addOverlay });
+      busy = false;
       return;
     }
 
-    closeAdd(els);
+    modal?.close?.('add');
     onAfterStateChange?.();
+
+    setTimeout(() => { busy = false; }, 90);
+  };
+
+  bindClick(els.btnCreate, () => {
+    safe(() => fx?.unlockAudio?.());
+    doCreate();
   });
 
-  // Enter key to create
-  els.newName?.addEventListener('keydown', (e) => {
-    if (e.key !== 'Enter') return;
-    els.btnCreate?.click();
+  bindEnterEsc(els.newName, () => els.btnCreate?.click(), () => modal?.close?.('add'));
+  bindEnterEsc(els.newEmoji, () => els.btnCreate?.click(), () => modal?.close?.('add'));
+  bindEnterEsc(els.newCat, () => els.btnCreate?.click(), () => modal?.close?.('add'));
+  bindEnterEsc(els.newModeTarget, () => els.btnCreate?.click(), () => modal?.close?.('add'));
+}
+
+/* =========================
+   Edit modal
+========================= */
+
+function bindEditModal({ els, actions, fx, modal, onAfterStateChange, store }) {
+  if (!els) return;
+
+  let busySave = false;
+  let busyAdd = false;
+
+  const getEditingId = () => String(els.editOverlay?.dataset?.editingId || '').trim();
+
+  const doSave = () => {
+    if (busySave) return;
+    busySave = true;
+
+    const id = getEditingId();
+    if (!id) {
+      busySave = false;
+      return;
+    }
+
+    const name = (els.editName?.value || '').trim();
+    const emoji = (els.editEmoji?.value || '').trim();
+    const cat = String(els.editCat?.value || 'otros');
+
+    const res = actions?.editItem?.(id, { name, emoji, cat });
+
+    if (!res?.ok) {
+      shakeIfMotion({ store, overlay: els.editOverlay });
+      busySave = false;
+      return;
+    }
+
+    modal?.close?.('edit');
+    onAfterStateChange?.();
+    setTimeout(() => { busySave = false; }, 90);
+  };
+
+  const doAddToMode = () => {
+    if (busyAdd) return;
+    busyAdd = true;
+
+    const id = getEditingId();
+    if (!id) {
+      busyAdd = false;
+      return;
+    }
+
+    const toMode = String(els.dupMode?.value || '').trim();
+    if (!toMode) {
+      safe(() => fx?.toast?.('Escoge una lista 🙃'));
+      safe(() => fx?.haptic?.(14));
+      busyAdd = false;
+      return;
+    }
+
+    let res = null;
+
+    if (typeof actions?.assignItemToModes === 'function') {
+      res = actions.assignItemToModes(id, [toMode]);
+    } else if (typeof actions?.addItemToMode === 'function') {
+      res = actions.addItemToMode(id, toMode);
+    } else {
+      res = { ok: false };
+    }
+
+    if (!res?.ok) {
+      safe(() => fx?.toast?.('No se pudo agregar a esa lista 🙄'));
+      safe(() => fx?.haptic?.(14));
+      busyAdd = false;
+      return;
+    }
+
+    safe(() => fx?.toast?.('Agregado a la otra lista ✅'));
+    safe(() => fx?.haptic?.(10));
+    onAfterStateChange?.();
+    setTimeout(() => { busyAdd = false; }, 90);
+  };
+
+  bindClick(els.btnSaveEdit, () => {
+    safe(() => fx?.unlockAudio?.());
+    doSave();
   });
 
-  // ESC in the add modal should close (already global, but feels nicer)
-  els.newName?.addEventListener('keydown', (e) => {
-    if (e.key !== 'Escape') return;
-    closeAdd(els);
+  bindClick(els.btnAddToMode, () => {
+    safe(() => fx?.unlockAudio?.());
+    doAddToMode();
+  });
+
+  bindEnterEsc(els.editName, () => els.btnSaveEdit?.click(), () => modal?.close?.('edit'));
+  bindEnterEsc(els.editEmoji, () => els.btnSaveEdit?.click(), () => modal?.close?.('edit'));
+  bindEnterEsc(els.editCat, () => els.btnSaveEdit?.click(), () => modal?.close?.('edit'));
+  bindEnterEsc(els.dupMode, () => els.btnAddToMode?.click(), () => modal?.close?.('edit'));
+}
+
+/* =========================
+   Mode editor
+========================= */
+
+function bindModeEditor({ els, store, actions, fx, modal, onAfterStateChange }) {
+  if (!els) return;
+
+  const trigger = resolveModeEditButton(els);
+  if (trigger) {
+    bindClick(trigger, () => {
+      openModeEditor({
+        els,
+        store,
+        actions,
+        fx,
+        modal,
+        onAfterStateChange,
+        returnFocusEl: trigger
+      });
+    }, '__modeEditorTrigger__');
+  }
+
+  const saveBtn = resolveModeEditorSaveButton(els);
+  const deleteBtn = resolveModeEditorDeleteButton(els);
+
+  bindClick(saveBtn, () => {
+    saveModeEditor({ els, store, actions, fx, modal, onAfterStateChange });
+  }, '__modeEditorSave__');
+
+  bindClick(deleteBtn, () => {
+    deleteModeEditor({ els, store, actions, fx, modal, onAfterStateChange });
+  }, '__modeEditorDelete__');
+
+  bindChange(resolveModeEditorSelect(els), () => {
+    const overlay = resolveModeEditorOverlay(els);
+    const state = store?.getState?.() || {};
+    const selectEl = resolveModeEditorSelect(els);
+    const nameInput = resolveModeEditorNameInput(els);
+    const countEl = resolveModeItemsCountEl(els);
+
+    const modeKey = String(selectEl?.value || getCurrentMode(state) || '').trim();
+
+    if (overlay?.dataset) overlay.dataset.modeKey = modeKey;
+
+    const modeData = getModeData(state, modeKey);
+
+    if (nameInput) {
+      nameInput.value = String(
+        stripLeadingEmoji(modeData?.label || modeData?.name || modeKey || '')
+      );
+    }
+
+    if (countEl) {
+      const count = Array.isArray(modeData?.items)
+        ? modeData.items.length
+        : getItemsForMode(state, modeKey).length;
+      countEl.textContent = String(count);
+    }
+  }, '__modeEditorSelectChange__');
+
+  bindEnterEsc(
+    resolveModeEditorNameInput(els),
+    () => resolveModeEditorSaveButton(els)?.click?.(),
+    () => modal?.close?.('modeEditor')
+  );
+
+  bindEnterEsc(
+    resolveModeEditorSelect(els),
+    () => resolveModeEditorSaveButton(els)?.click?.(),
+    () => modal?.close?.('modeEditor')
+  );
+}
+
+function openModeEditor({ els, store, actions, fx, modal, onAfterStateChange, returnFocusEl } = {}) {
+  const state = store?.getState?.() || {};
+  const currentMode = getCurrentMode(state);
+
+  if (typeof actions?.openModeEditor === 'function') {
+    safe(() => actions.openModeEditor(currentMode));
+  }
+
+  const overlay = resolveModeEditorOverlay(els);
+  if (overlay && modal) {
+    const modeData = getModeData(state, currentMode);
+    const nameInput = resolveModeEditorNameInput(els);
+    const selectEl = resolveModeEditorSelect(els);
+    const countEl = resolveModeItemsCountEl(els);
+
+    if (overlay.dataset) {
+      overlay.dataset.modeKey = currentMode;
+    }
+
+    if (nameInput) {
+      nameInput.value = String(
+        stripLeadingEmoji(modeData?.label || modeData?.name || currentMode || '')
+      );
+    }
+
+    if (selectEl) {
+      if (selectHasValue(selectEl, currentMode)) {
+        selectEl.value = String(currentMode || '');
+      }
+    }
+
+    if (countEl) {
+      const count = Array.isArray(modeData?.items)
+        ? modeData.items.length
+        : getItemsForMode(state, currentMode).length;
+      countEl.textContent = String(count);
+    }
+
+    modal.open('modeEditor', {
+      returnFocusEl: returnFocusEl || document.activeElement,
+      focusEl: nameInput || selectEl
+    });
+    return;
+  }
+
+  safe(() => fx?.toast?.('El editor de listas aún no está conectado del todo 👀'));
+  safe(() => fx?.haptic?.(10));
+}
+
+function saveModeEditor({ els, store, actions, fx, modal, onAfterStateChange }) {
+  const state = store?.getState?.() || {};
+  const overlay = resolveModeEditorOverlay(els);
+  const selectEl = resolveModeEditorSelect(els);
+  const nameInput = resolveModeEditorNameInput(els);
+
+  const modeKey = String(
+    overlay?.dataset?.modeKey ||
+    selectEl?.value ||
+    getCurrentMode(state) ||
+    ''
+  ).trim();
+
+  if (!modeKey) {
+    safe(() => fx?.toast?.('No encontré la lista para editar 😑'));
+    safe(() => fx?.haptic?.(14));
+    return;
+  }
+
+  const newName = String(nameInput?.value || '').trim();
+
+  if (!newName) {
+    shakeIfMotion({ store, overlay });
+    safe(() => fx?.toast?.('Ponle un nombre a la lista'));
+    return;
+  }
+
+  let res = null;
+
+  if (typeof actions?.updateMode === 'function') {
+    res = actions.updateMode(modeKey, { name: newName, label: `🧳 ${newName}` });
+  } else if (typeof actions?.renameMode === 'function') {
+    res = actions.renameMode(modeKey, newName);
+  } else {
+    store?.setState?.((prev) => {
+      const next = { ...(prev || {}) };
+      const data = { ...(next.data || {}) };
+      const modes = { ...(data.modes || {}) };
+
+      const prevMode = { ...(modes[modeKey] || {}) };
+      modes[modeKey] = { ...prevMode, name: newName, label: `🧳 ${newName}` };
+
+      data.modes = modes;
+      next.data = data;
+      return next;
+    });
+
+    res = { ok: true };
+  }
+
+  if (!res?.ok) {
+    shakeIfMotion({ store, overlay });
+    safe(() => fx?.toast?.('No se pudo guardar la lista 🙄'));
+    safe(() => fx?.haptic?.(14));
+    return;
+  }
+
+  modal?.close?.('modeEditor');
+  safe(() => fx?.toast?.('Lista actualizada ✨'));
+  safe(() => fx?.haptic?.(8));
+  onAfterStateChange?.();
+}
+
+function deleteModeEditor({ els, store, actions, fx, modal, onAfterStateChange }) {
+  const state = store?.getState?.() || {};
+  const overlay = resolveModeEditorOverlay(els);
+  const selectEl = resolveModeEditorSelect(els);
+
+  const modeKey = String(
+    overlay?.dataset?.modeKey ||
+    selectEl?.value ||
+    getCurrentMode(state) ||
+    ''
+  ).trim();
+
+  if (!modeKey) return;
+
+  const ok = confirm(`¿Borrar la lista "${modeKey}"?`);
+  if (!ok) return;
+
+  let res = null;
+
+  if (typeof actions?.deleteMode === 'function') {
+    res = actions.deleteMode(modeKey);
+  } else {
+    safe(() => fx?.toast?.('Falta conectar deleteMode en actions.js'));
+    safe(() => fx?.haptic?.(12));
+    return;
+  }
+
+  if (!res?.ok) {
+    safe(() => fx?.toast?.('No se pudo borrar esa lista'));
+    safe(() => fx?.haptic?.(14));
+    return;
+  }
+
+  modal?.close?.('modeEditor');
+  onAfterStateChange?.();
+}
+
+/* =========================
+   Edit convenience
+========================= */
+
+export function openEditById({ els, store, fx, modal, id }) {
+  if (!els?.editOverlay) return;
+
+  const cleanId = String(id ?? '').trim();
+  if (!cleanId) return;
+
+  const s = store?.getState?.() || {};
+  const mode = getCurrentMode(s);
+
+  const items = getItemsForMode(s, mode);
+  const it = items.find(x => x && String(x.id) === cleanId);
+
+  if (!it) {
+    safe(() => fx?.toast?.('No encontré ese item 🤨'));
+    safe(() => fx?.haptic?.(14));
+    return;
+  }
+
+  els.editOverlay.dataset.editingId = cleanId;
+
+  if (els.editName) els.editName.value = String(it.name || '');
+  if (els.editEmoji) els.editEmoji.value = String(it.emoji || '');
+  if (els.editCat) els.editCat.value = String(it.cat || 'otros');
+
+  if (els.dupMode) {
+    const currentMode = String(mode || 'salida');
+    if (selectHasValue(els.dupMode, currentMode)) {
+      els.dupMode.value = currentMode;
+    }
+  }
+
+  modal?.open?.('edit', {
+    returnFocusEl: document.activeElement,
+    focusEl: els.editName
   });
 }
 
 /* =========================
-   Helpers
+   Mode-aware access
 ========================= */
 
-function safe(fn){
-  try{ fn?.(); }catch{}
+function getCurrentMode(state) {
+  return String(state?.settings?.tripMode || state?.data?.mode || 'salida');
 }
 
-function getFocusables(root){
+function getItemsForMode(state, mode) {
+  if (state?.data?.itemsByMode && typeof state.data.itemsByMode === 'object') {
+    const arr = state.data.itemsByMode[mode];
+    return Array.isArray(arr) ? arr : [];
+  }
+  return Array.isArray(state?.data?.items) ? state.data.items : [];
+}
+
+function getModeData(state, mode) {
+  const key = String(mode || '').trim();
+  if (!key) return null;
+
+  if (state?.data?.modes && typeof state.data.modes === 'object' && state.data.modes[key]) {
+    return {
+      ...state.data.modes[key],
+      items: getItemsForMode(state, key)
+    };
+  }
+
+  if (state?.data?.modesById && typeof state.data.modesById === 'object' && state.data.modesById[key]) {
+    return {
+      ...state.data.modesById[key],
+      items: getItemsForMode(state, key)
+    };
+  }
+
+  return {
+    key,
+    name: key,
+    label: key,
+    items: getItemsForMode(state, key)
+  };
+}
+
+/* =========================
+   Resolver helpers
+========================= */
+
+function resolveModeEditorOverlay(els) {
+  return (
+    els?.modeEditorOverlay ||
+    els?.modesOverlay ||
+    null
+  );
+}
+
+function resolveModeEditButton(els) {
+  return (
+    els?.btnEditMode ||
+    els?.tripModeEditBtn ||
+    els?.btnTripModeEdit ||
+    els?.modeEditBtn ||
+    els?.btnManageModes ||
+    null
+  );
+}
+
+function resolveModeEditorCloseButton(els) {
+  return (
+    els?.btnCloseModeEditor ||
+    els?.btnCloseModes ||
+    null
+  );
+}
+
+function resolveModeEditorSaveButton(els) {
+  return (
+    els?.btnSaveModeEditor ||
+    els?.btnSaveMode ||
+    els?.btnCreateMode ||
+    null
+  );
+}
+
+function resolveModeEditorDeleteButton(els) {
+  return (
+    els?.btnDeleteModeEditor ||
+    els?.btnDeleteMode ||
+    null
+  );
+}
+
+function resolveModeEditorNameInput(els) {
+  return (
+    els?.modeNameInput ||
+    els?.modeEditorName ||
+    els?.newModeName ||
+    null
+  );
+}
+
+function resolveModeEditorSelect(els) {
+  return (
+    els?.modeEditorSelect ||
+    null
+  );
+}
+
+function resolveModeItemsCountEl(els) {
+  return (
+    els?.modeItemsCount ||
+    null
+  );
+}
+
+function selectHasValue(selectEl, value) {
+  if (!selectEl || !('options' in selectEl)) return false;
+  return Array.from(selectEl.options || []).some(opt => String(opt.value) === String(value));
+}
+
+function stripLeadingEmoji(text = '') {
+  return String(text)
+    .replace(/^[^\p{L}\p{N}]+/u, '')
+    .trim();
+}
+
+/* =========================
+   Generic helpers
+========================= */
+
+function bindEnterEsc(el, onEnter, onEsc) {
+  if (!el) return;
+
+  bindOnce(el, '__bindEnterEsc__', 'keydown', (e) => {
+    if (e.isComposing) return;
+
+    if (e.key === 'Enter') {
+      e.preventDefault();
+      onEnter?.();
+    }
+
+    if (e.key === 'Escape') {
+      e.preventDefault();
+      onEsc?.();
+    }
+  });
+}
+
+function bindToggleChange(el, handler) {
+  if (!el) return;
+
+  bindOnce(el, '__bindToggleChange__', 'change', () => {
+    const checked = !!el.checked;
+    syncToggleVisualState(el, checked);
+    handler?.({ checked, el });
+  });
+
+  const wrapper = findToggleWrapper(el);
+  if (wrapper && wrapper !== el) {
+    bindClick(wrapper, (e) => {
+      const tag = String(e?.target?.tagName || '').toLowerCase();
+      if (tag === 'input' || tag === 'label') return;
+
+      if (typeof el.click === 'function') {
+        el.click();
+      } else {
+        el.checked = !el.checked;
+        syncToggleVisualState(el, !!el.checked);
+        handler?.({ checked: !!el.checked, el });
+      }
+    }, '__toggleWrapperClick__');
+  }
+}
+
+function syncToggleVisualState(inputEl, checked) {
+  if (!inputEl) return;
+
+  const isOn = !!checked;
+  const wrapper = findToggleWrapper(inputEl);
+
+  inputEl.setAttribute('aria-checked', String(isOn));
+
+  if (wrapper) {
+    wrapper.classList.toggle('active', isOn);
+    wrapper.classList.toggle('isOn', isOn);
+    wrapper.setAttribute('aria-checked', String(isOn));
+  }
+
+  inputEl.classList.toggle?.('active', isOn);
+  inputEl.classList.toggle?.('isOn', isOn);
+}
+
+function findToggleWrapper(inputEl) {
+  if (!inputEl) return null;
+
+  return (
+    inputEl.closest?.('.toggle') ||
+    inputEl.closest?.('.switch') ||
+    inputEl.parentElement ||
+    inputEl
+  );
+}
+
+function shakeIfMotion({ store, overlay }) {
+  const motion = !!store?.getState?.()?.settings?.motion;
+  if (!motion) return;
+
+  const modal = overlay?.querySelector?.('.modal') || overlay?.querySelector?.('[data-modal]') || overlay;
+  if (!modal) return;
+
+  modal.classList.remove('shake');
+  void modal.offsetWidth;
+  modal.classList.add('shake');
+}
+
+function getFocusables(root) {
+  if (!root?.querySelectorAll) return [];
+
   return Array.from(root.querySelectorAll(
-    'button, [href], input, select, textarea, [tabindex]:not([tabindex="-1"])'
-  )).filter(el => !el.hasAttribute('disabled') && el.getAttribute('aria-hidden') !== 'true');
+    [
+      'button:not([disabled])',
+      '[href]',
+      'input:not([disabled]):not([type="hidden"])',
+      'select:not([disabled])',
+      'textarea:not([disabled])',
+      '[tabindex]:not([tabindex="-1"])'
+    ].join(', ')
+  )).filter(el => {
+    if (!isElementVisible(el)) return false;
+    if (el.getAttribute('aria-hidden') === 'true') return false;
+    return true;
+  });
 }
 
-function isDevEnv(){
-  try{
+function isElementVisible(el) {
+  if (!el) return false;
+  const style = window.getComputedStyle?.(el);
+  if (!style) return true;
+  return style.display !== 'none' && style.visibility !== 'hidden';
+}
+
+function bindClick(el, handler, key = '__bindClick__') {
+  if (!el) return;
+  bindOnce(el, key, 'click', handler);
+}
+
+function bindChange(el, handler, key = '__bindChange__') {
+  if (!el) return;
+  bindOnce(el, key, 'change', handler);
+}
+
+function bindOnce(target, key, type, handler, options) {
+  if (!target || !type || !handler) return;
+  if (!target.__uiBoundHandlers) target.__uiBoundHandlers = new Map();
+
+  const mapKey = `${key}:${type}`;
+  if (target.__uiBoundHandlers.has(mapKey)) return;
+
+  target.addEventListener(type, handler, options);
+  target.__uiBoundHandlers.set(mapKey, handler);
+}
+
+function safe(fn) {
+  try { fn?.(); } catch {}
+}
+
+function isDevEnv() {
+  try {
     const h = location.hostname;
     const p = location.protocol;
-    // localhost / 127.0.0.1 / file:// are treated as dev
     if (p === 'file:') return true;
     return h === 'localhost' || h === '127.0.0.1' || h === '';
-  }catch{
+  } catch {
     return false;
   }
 }
