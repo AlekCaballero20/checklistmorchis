@@ -1,49 +1,767 @@
-/* Ripple */
+/* ==========================================================================
+   COMPONENTS.CSS
+   FX / MICROINTERACTIONS / FEEDBACK STATES
+   --------------------------------------------------------------------------
+   Incluye:
+   - Ripple
+   - Swipe feedback
+   - Item microinteractions
+   - Toggle / check feedback
+   - Buttons
+   - Modal / toast / shake
+   - Motion accessibility
+   ========================================================================== */
+
+
+/* ==========================================================================
+   MOTION TOKENS
+   ========================================================================== */
+
+:root{
+  --fx-ease-out: cubic-bezier(.2,.9,.2,1);
+  --fx-ease-soft: cubic-bezier(.22,.8,.22,1);
+  --fx-ease-bounce: cubic-bezier(.18,1,.32,1);
+
+  --fx-fast: .16s;
+  --fx-mid: .24s;
+  --fx-slow: .38s;
+
+  --fx-shadow-soft: 0 8px 24px rgba(16,24,40,.10);
+  --fx-shadow-lift: 0 14px 34px rgba(16,24,40,.14);
+  --fx-shadow-press: 0 4px 12px rgba(16,24,40,.10);
+
+  --fx-green-rgb: 34,197,94;
+  --fx-red-rgb: 239,68,68;
+  --fx-blue-rgb: 12,65,196;
+  --fx-black-rgb: 15,23,42;
+}
+
+
+/* ==========================================================================
+   GENERIC HELPERS
+   ========================================================================== */
+
+.noSelect,
+.noSelect *{
+  -webkit-user-select:none !important;
+  user-select:none !important;
+}
+
+.tapHighlightNone,
+.tapHighlightNone *{
+  -webkit-tap-highlight-color: transparent;
+}
+
+.isHiddenVisually{
+  opacity:0 !important;
+  pointer-events:none !important;
+}
+
+.gpu{
+  transform:translateZ(0);
+  backface-visibility:hidden;
+  will-change:transform;
+}
+
+
+/* ==========================================================================
+   RIPPLE EFFECT
+   ========================================================================== */
+
 .fxRipple{
   position:absolute;
+  left:0;
+  top:0;
   border-radius:999px;
   pointer-events:none;
-  opacity:.18;
+  z-index:0;
+
+  background: currentColor;
+  opacity:.16;
+
   transform:scale(0);
-  background: currentColor; /* o cambia por var(--ripple) */
+  transform-origin:center center;
   filter: blur(.2px);
-  animation: fxRippleIn .52s cubic-bezier(.2,.9,.2,1) forwards;
+
+  will-change: transform, opacity;
+  animation: fxRippleIn .56s var(--fx-ease-out) forwards;
 }
 
 .fxRipple.fxRippleOut{
-  animation: fxRippleOut .28s ease-out forwards;
+  animation: fxRippleOut .24s ease-out forwards;
 }
 
 @keyframes fxRippleIn{
-  to { transform:scale(1); opacity:0; }
+  0%{
+    transform:scale(0);
+    opacity:.18;
+  }
+  100%{
+    transform:scale(1);
+    opacity:0;
+  }
 }
 
 @keyframes fxRippleOut{
-  to { opacity:0; }
+  0%{
+    opacity:.08;
+  }
+  100%{
+    opacity:0;
+  }
 }
 
-/* Prevent text selection while swiping */
-.noSelect, .noSelect * { user-select: none !important; }
 
-/* Swipe states */
-.item.swiping { touch-action: pan-y; } /* allow vertical scroll, we handle horiz when locked */
-.item.swipeLift { filter: drop-shadow(0 8px 14px rgba(0,0,0,.12)); }
+/* ==========================================================================
+   ITEM BASE INTERACTIONS
+   ========================================================================== */
 
-/* Reveal hints (optional visual cues) */
-.item.revealRight { background: rgba(34,197,94,.10); }  /* green hint */
-.item.revealLeft  { background: rgba(239,68,68,.10); }  /* red hint */
+.item{
+  position:relative;
+  overflow:hidden;
+  isolation:isolate;
+
+  transition:
+    transform var(--fx-fast) ease,
+    background-color var(--fx-mid) ease,
+    border-color var(--fx-mid) ease,
+    box-shadow var(--fx-mid) ease,
+    filter var(--fx-mid) ease,
+    opacity var(--fx-mid) ease;
+}
+
+.item::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  pointer-events:none;
+  border-radius:inherit;
+  opacity:0;
+  transition:opacity var(--fx-mid) ease;
+  z-index:0;
+}
+
+.item > *{
+  position:relative;
+  z-index:1;
+}
+
+.item:active{
+  transform:scale(.988);
+}
+
+.item.isPressable:hover{
+  box-shadow: var(--fx-shadow-soft);
+}
+
+.item.isPressable:active{
+  box-shadow: var(--fx-shadow-press);
+}
+
+
+/* ==========================================================================
+   SWIPE STATES
+   ========================================================================== */
+
+/* Permite scroll vertical mientras se arrastra horizontalmente */
+.item.swiping{
+  touch-action:pan-y;
+  cursor:grabbing;
+  transition:none !important;
+}
+
+/* Sensación de tarjeta levantada */
+.item.swipeLift{
+  transform:scale(1.01);
+  filter: drop-shadow(0 10px 18px rgba(15,23,42,.12));
+  z-index:3;
+}
+
+/* Hints de reveal */
+.item.revealRight{
+  background: rgba(var(--fx-green-rgb), .10);
+  border-color: rgba(var(--fx-green-rgb), .22);
+}
+
+.item.revealRight::before{
+  opacity:1;
+  background:
+    linear-gradient(
+      90deg,
+      rgba(var(--fx-green-rgb), 0) 0%,
+      rgba(var(--fx-green-rgb), .05) 45%,
+      rgba(var(--fx-green-rgb), .10) 100%
+    );
+}
+
+.item.revealLeft{
+  background: rgba(var(--fx-red-rgb), .10);
+  border-color: rgba(var(--fx-red-rgb), .22);
+}
+
+.item.revealLeft::before{
+  opacity:1;
+  background:
+    linear-gradient(
+      270deg,
+      rgba(var(--fx-red-rgb), 0) 0%,
+      rgba(var(--fx-red-rgb), .05) 45%,
+      rgba(var(--fx-red-rgb), .10) 100%
+    );
+}
 
 /* Commit states */
-.item.swipeCommitRight { background: rgba(34,197,94,.14); }
-.item.swipeCommitLeft  { background: rgba(239,68,68,.14); }
+.item.swipeCommitRight{
+  background: rgba(var(--fx-green-rgb), .16);
+  border-color: rgba(var(--fx-green-rgb), .28);
+  box-shadow: inset 0 0 0 1px rgba(var(--fx-green-rgb), .10);
+}
 
-/* Delete collapse animation (optional) */
+.item.swipeCommitLeft{
+  background: rgba(var(--fx-red-rgb), .16);
+  border-color: rgba(var(--fx-red-rgb), .28);
+  box-shadow: inset 0 0 0 1px rgba(var(--fx-red-rgb), .10);
+}
+
+/* Acción completada visualmente */
+.item.swipeDone{
+  animation: swipeDonePulse .26s var(--fx-ease-soft);
+}
+
+@keyframes swipeDonePulse{
+  0%{
+    transform:scale(1);
+  }
+  50%{
+    transform:scale(1.015);
+  }
+  100%{
+    transform:scale(1);
+  }
+}
+
+
+/* ==========================================================================
+   DELETE COLLAPSE
+   ========================================================================== */
+
 .item.swipeRemove{
-  transition: height 180ms ease, margin 180ms ease, padding 180ms ease, opacity 180ms ease;
-  opacity: 0;
-  height: 0 !important;
-  margin: 0 !important;
-  padding-top: 0 !important;
-  padding-bottom: 0 !important;
-  overflow: hidden;
+  overflow:hidden !important;
+
+  transition:
+    height .18s ease,
+    min-height .18s ease,
+    margin .18s ease,
+    padding-top .18s ease,
+    padding-bottom .18s ease,
+    border-width .18s ease,
+    opacity .18s ease,
+    transform .18s ease !important;
+
+  opacity:0;
+  height:0 !important;
+  min-height:0 !important;
+  margin:0 !important;
+  padding-top:0 !important;
+  padding-bottom:0 !important;
+  border-width:0 !important;
+  transform:scale(.98);
+}
+
+
+/* ==========================================================================
+   CHECK / TOGGLE MICRO FX
+   ========================================================================== */
+
+/* check redondito */
+.check{
+  position:relative;
+  flex:0 0 auto;
+
+  width:22px;
+  height:22px;
+  border-radius:999px;
+
+  border:2px solid rgba(15,23,42,.16);
+  background: rgba(255,255,255,.72);
+
+  display:flex;
+  align-items:center;
+  justify-content:center;
+
+  transition:
+    background var(--fx-fast) ease,
+    border-color var(--fx-fast) ease,
+    box-shadow var(--fx-fast) ease,
+    transform var(--fx-fast) ease;
+}
+
+.check::after{
+  content:"";
+  position:absolute;
+  inset:-4px;
+  border-radius:inherit;
+  pointer-events:none;
+  opacity:0;
+  box-shadow: 0 0 0 0 rgba(var(--fx-green-rgb), .22);
+  transition:opacity var(--fx-fast) ease;
+}
+
+.check .knob{
+  width:10px;
+  height:10px;
+  border-radius:999px;
+  background: currentColor;
+
+  transform:scale(0);
+  opacity:0;
+
+  transition:
+    transform var(--fx-fast) var(--fx-ease-bounce),
+    opacity var(--fx-fast) ease;
+}
+
+.item.done .check,
+.check.isOn{
+  border-color: transparent;
+  background: rgba(var(--fx-green-rgb), .92);
+  color: white;
+  box-shadow: 0 6px 14px rgba(var(--fx-green-rgb), .22);
+}
+
+.item.done .check::after,
+.check.isOn::after{
+  opacity:1;
+}
+
+.item.done .check .knob,
+.check.isOn .knob{
+  transform:scale(1);
+  opacity:1;
+}
+
+.check:active{
+  transform:scale(.94);
+}
+
+/* toggle switch estilo pill con bolita SIEMPRE visible */
+.switch,
+.toggle{
+  position:relative;
+  flex:0 0 auto;
+  width:56px;
+  height:32px;
+  border-radius:999px;
+  border:1px solid rgba(15,23,42,.08);
+  background: rgba(15,23,42,.10);
+  box-shadow: inset 0 1px 2px rgba(15,23,42,.05);
+  transition:
+    background var(--fx-mid) ease,
+    border-color var(--fx-mid) ease,
+    box-shadow var(--fx-mid) ease,
+    transform var(--fx-fast) ease;
+}
+
+.switch::before,
+.toggle::before{
+  content:"";
+  position:absolute;
+  top:3px;
+  left:3px;
+
+  width:24px;
+  height:24px;
+  border-radius:999px;
+
+  background: #fff;
+  box-shadow:
+    0 2px 6px rgba(15,23,42,.14),
+    0 1px 2px rgba(15,23,42,.08);
+
+  opacity:1;
+  transform:translateX(0);
+  transition:
+    transform var(--fx-mid) var(--fx-ease-soft),
+    box-shadow var(--fx-mid) ease,
+    background var(--fx-mid) ease;
+}
+
+.switch.isOn,
+.toggle.active,
+.toggle.isOn,
+[aria-checked="true"].toggle,
+[aria-checked="true"].switch{
+  background: rgba(var(--fx-green-rgb), .36);
+  border-color: rgba(var(--fx-green-rgb), .24);
+  box-shadow:
+    inset 0 1px 2px rgba(255,255,255,.22),
+    0 0 0 1px rgba(var(--fx-green-rgb), .06);
+}
+
+.switch.isOn::before,
+.toggle.active::before,
+.toggle.isOn::before,
+[aria-checked="true"].toggle::before,
+[aria-checked="true"].switch::before{
+  transform:translateX(24px);
+}
+
+.switch:active,
+.toggle:active{
+  transform:scale(.97);
+}
+
+.switch:active::before,
+.toggle:active::before{
+  box-shadow:
+    0 1px 4px rgba(15,23,42,.12),
+    0 1px 2px rgba(15,23,42,.08);
+}
+
+
+/* ==========================================================================
+   BUTTON MICRO INTERACTIONS
+   ========================================================================== */
+
+.btn{
+  position:relative;
+  overflow:hidden;
+  isolation:isolate;
+
+  transition:
+    transform var(--fx-fast) ease,
+    box-shadow var(--fx-fast) ease,
+    background-color var(--fx-fast) ease,
+    border-color var(--fx-fast) ease,
+    filter var(--fx-fast) ease;
+}
+
+.btn::before{
+  content:"";
+  position:absolute;
+  inset:0;
+  border-radius:inherit;
+  pointer-events:none;
+  opacity:0;
+  background: linear-gradient(180deg, rgba(255,255,255,.16), rgba(255,255,255,0));
+  transition:opacity var(--fx-fast) ease;
+  z-index:0;
+}
+
+.btn > *{
+  position:relative;
+  z-index:1;
+}
+
+.btn:hover::before{
+  opacity:1;
+}
+
+.btn:active{
+  transform:scale(.965);
+}
+
+.btn.primary{
+  box-shadow: 0 8px 18px rgba(15,23,42,.12);
+}
+
+.btn.primary:hover{
+  box-shadow: 0 10px 22px rgba(15,23,42,.14);
+}
+
+.btn.primary:active{
+  box-shadow: 0 4px 10px rgba(15,23,42,.14);
+}
+
+.btn.ghost:hover{
+  background: rgba(15,23,42,.04);
+}
+
+.btn.danger:hover{
+  box-shadow: 0 8px 20px rgba(var(--fx-red-rgb), .14);
+}
+
+.btn[disabled],
+.btn.isDisabled{
+  opacity:.58;
+  pointer-events:none;
+  filter:saturate(.82);
+}
+
+
+/* ==========================================================================
+   ICON BUTTONS
+   ========================================================================== */
+
+.iconBtn{
+  position:relative;
+  overflow:hidden;
+  transition:
+    transform var(--fx-fast) ease,
+    background-color var(--fx-fast) ease,
+    box-shadow var(--fx-fast) ease;
+}
+
+.iconBtn:hover{
+  box-shadow: 0 6px 16px rgba(15,23,42,.08);
+}
+
+.iconBtn:active{
+  transform:scale(.94);
+}
+
+
+/* ==========================================================================
+   INPUT / FIELD FEEDBACK
+   ========================================================================== */
+
+.field,
+.input,
+.select,
+.textarea{
+  transition:
+    border-color var(--fx-fast) ease,
+    box-shadow var(--fx-fast) ease,
+    background-color var(--fx-fast) ease,
+    transform var(--fx-fast) ease;
+}
+
+.field:focus-within,
+.input:focus,
+.select:focus,
+.textarea:focus{
+  box-shadow:
+    0 0 0 3px rgba(var(--fx-blue-rgb), .10),
+    0 1px 2px rgba(15,23,42,.04);
+}
+
+.isInvalid,
+.field.isInvalid,
+.input.isInvalid,
+.select.isInvalid,
+.textarea.isInvalid{
+  border-color: rgba(var(--fx-red-rgb), .45) !important;
+  box-shadow: 0 0 0 3px rgba(var(--fx-red-rgb), .08);
+}
+
+
+/* ==========================================================================
+   MODAL MICRO INTERACTIONS
+   ========================================================================== */
+
+.modalBackdrop{
+  animation: fadeInBackdrop .18s ease forwards;
+}
+
+@keyframes fadeInBackdrop{
+  from{
+    opacity:0;
+  }
+  to{
+    opacity:1;
+  }
+}
+
+.modal{
+  transform-origin:center center;
+  will-change:transform, opacity;
+  animation: modalIn .24s var(--fx-ease-out);
+}
+
+.modal.isClosing{
+  animation: modalOut .18s ease forwards;
+}
+
+@keyframes modalIn{
+  from{
+    opacity:0;
+    transform:translateY(10px) scale(.975);
+    filter:blur(2px);
+  }
+  to{
+    opacity:1;
+    transform:translateY(0) scale(1);
+    filter:blur(0);
+  }
+}
+
+@keyframes modalOut{
+  from{
+    opacity:1;
+    transform:translateY(0) scale(1);
+    filter:blur(0);
+  }
+  to{
+    opacity:0;
+    transform:translateY(8px) scale(.985);
+    filter:blur(1px);
+  }
+}
+
+
+/* ==========================================================================
+   SHAKE (INVALID FORM)
+   ========================================================================== */
+
+.shake{
+  animation: shake .34s ease;
+}
+
+@keyframes shake{
+  0%   { transform:translateX(0); }
+  18%  { transform:translateX(-6px); }
+  36%  { transform:translateX(6px); }
+  54%  { transform:translateX(-4px); }
+  72%  { transform:translateX(4px); }
+  90%  { transform:translateX(-2px); }
+  100% { transform:translateX(0); }
+}
+
+
+/* ==========================================================================
+   PROGRESS BAR GLOW
+   ========================================================================== */
+
+.progressBar{
+  transition:
+    width var(--fx-slow) var(--fx-ease-soft),
+    box-shadow var(--fx-mid) ease,
+    filter var(--fx-mid) ease;
+}
+
+.progressBar.glow{
+  box-shadow:
+    0 0 0 2px rgba(var(--fx-blue-rgb), .14),
+    0 0 16px rgba(var(--fx-blue-rgb), .22),
+    0 4px 14px rgba(var(--fx-blue-rgb), .14);
+}
+
+
+/* ==========================================================================
+   TOAST
+   ========================================================================== */
+
+.toast{
+  pointer-events:none;
+  will-change:transform, opacity;
+}
+
+.toast.show{
+  animation: toastIn .26s var(--fx-ease-out);
+}
+
+.toast.hide{
+  animation: toastOut .18s ease forwards;
+}
+
+@keyframes toastIn{
+  from{
+    opacity:0;
+    transform:translateY(10px) scale(.98);
+  }
+  to{
+    opacity:1;
+    transform:translateY(0) scale(1);
+  }
+}
+
+@keyframes toastOut{
+  from{
+    opacity:1;
+    transform:translateY(0) scale(1);
+  }
+  to{
+    opacity:0;
+    transform:translateY(8px) scale(.985);
+  }
+}
+
+
+/* ==========================================================================
+   BADGES / PILLS / CHIPS
+   ========================================================================== */
+
+.chip,
+.badge,
+.pill{
+  transition:
+    transform var(--fx-fast) ease,
+    background-color var(--fx-fast) ease,
+    border-color var(--fx-fast) ease,
+    box-shadow var(--fx-fast) ease;
+}
+
+.chip:active,
+.badge:active,
+.pill:active{
+  transform:scale(.97);
+}
+
+
+/* ==========================================================================
+   LIST STAGGER HELPERS
+   ========================================================================== */
+
+.staggerIn{
+  animation: staggerIn .26s var(--fx-ease-out);
+}
+
+@keyframes staggerIn{
+  from{
+    opacity:0;
+    transform:translateY(8px);
+  }
+  to{
+    opacity:1;
+    transform:translateY(0);
+  }
+}
+
+
+/* ==========================================================================
+   EMPTY / SUCCESS / WARNING STATES
+   ========================================================================== */
+
+.statePop{
+  animation: statePop .24s var(--fx-ease-bounce);
+}
+
+@keyframes statePop{
+  0%{
+    transform:scale(.94);
+    opacity:.7;
+  }
+  100%{
+    transform:scale(1);
+    opacity:1;
+  }
+}
+
+
+/* ==========================================================================
+   ACCESSIBILITY: REDUCED MOTION
+   ========================================================================== */
+
+@media (prefers-reduced-motion: reduce){
+  *,
+  *::before,
+  *::after{
+    animation-duration:.01ms !important;
+    animation-iteration-count:1 !important;
+    transition-duration:.01ms !important;
+    scroll-behavior:auto !important;
+  }
+
+  .item:active,
+  .btn:active,
+  .iconBtn:active,
+  .switch:active,
+  .toggle:active,
+  .check:active{
+    transform:none !important;
+  }
+
+  .fxRipple{
+    display:none !important;
+  }
 }
