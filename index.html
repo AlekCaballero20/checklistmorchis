@@ -5,18 +5,20 @@
     META CORE
   ========================================================================= -->
   <meta charset="utf-8" />
-  <meta name="viewport"
-        content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no"
+  />
 
   <title>Maleta · Checklist</title>
-  <meta name="description"
-        content="Checklist rápido, bonito y offline para no olvidar nada antes de salir." />
+  <meta
+    name="description"
+    content="Checklist rápido, bonito y offline para no olvidar nada antes de salir."
+  />
 
   <!-- Theme -->
   <meta name="theme-color" content="#0C41C4" />
   <meta name="color-scheme" content="light" />
-
-  <!-- Evita que teléfonos conviertan números en links -->
   <meta name="format-detection" content="telephone=no" />
 
   <!-- =========================================================================
@@ -24,17 +26,16 @@
   ========================================================================= -->
   <link rel="manifest" href="./manifest.webmanifest" />
 
-  <!-- iOS full support -->
   <meta name="apple-mobile-web-app-capable" content="yes" />
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="Maleta" />
 
   <!-- Icons -->
-  <link rel="icon" href="./icons/icon-192.png">
-  <link rel="apple-touch-icon" href="./icons/icon-192.png">
+  <link rel="icon" href="./icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="./icons/icon-192.png" />
 
   <!-- =========================================================================
-    STYLES (Modular System)
+    STYLES
   ========================================================================= -->
   <link rel="stylesheet" href="./styles/base.css" />
   <link rel="stylesheet" href="./styles/theme.css" />
@@ -44,6 +45,7 @@
 </head>
 
 <body>
+  <a class="skipLink" href="#list">Saltar al checklist</a>
 
   <!-- =========================================================================
     NOSCRIPT FALLBACK
@@ -62,53 +64,61 @@
   </noscript>
 
   <!-- =========================================================================
-    DESKTOP BLOCKER (Mobile-first PWA)
+    DESKTOP BLOCKER
   ========================================================================= -->
   <div id="desktopBlock" class="desktopBlock" aria-hidden="true">
-    <div class="desktopCard" role="dialog" aria-modal="true">
+    <div class="desktopCard" role="dialog" aria-modal="true" aria-label="Solo móvil">
       <div class="desktopEmoji" aria-hidden="true">📱</div>
       <h2>Solo mobile.</h2>
       <p>
-        Esta app está hecha para instalarse en el cel.
-        Abrila desde el teléfono y listo.
+        Esta app está pensada para usarse en el cel.
+        Ábrela desde el teléfono y ya.
       </p>
     </div>
   </div>
 
   <!-- =========================================================================
-    UPDATE BANNER (SW Updates)
+    UPDATE BANNER
   ========================================================================= -->
-  <div id="updateBanner" class="updateBanner" hidden>
+  <div id="updateBanner" class="updateBanner" hidden aria-live="polite">
     <div class="updateText">
       <strong>Nueva versión disponible</strong>
       <span>Actualiza para tener lo último.</span>
     </div>
+
     <div class="updateActions">
       <button class="btn mini" id="btnUpdateLater" type="button">Luego</button>
-      <button class="btn primary mini" id="btnUpdateNow" type="button">
-        Actualizar
-      </button>
+      <button class="btn primary mini" id="btnUpdateNow" type="button">Actualizar</button>
     </div>
   </div>
 
   <!-- =========================================================================
     APP ROOT
   ========================================================================= -->
-  <main class="app" id="app">
+  <main class="app" id="app" aria-label="Aplicación de checklist">
 
     <!-- Topbar -->
-    <header class="topbar">
+    <header class="topbar" aria-label="Barra superior">
       <div class="brand" aria-label="Maleta Checklist">
         <div class="logoDot" aria-hidden="true"></div>
+
         <div class="brandText">
           <div class="title">Maleta</div>
           <div class="subtitle">Checklist rápido (offline)</div>
         </div>
       </div>
 
-      <button class="btn ghost" id="btnSettings" type="button" aria-label="Ajustes">
-        <span class="icon" aria-hidden="true">⚙️</span>
-      </button>
+      <div class="topbarActions" aria-label="Acciones superiores">
+        <button
+          class="btn ghost"
+          id="btnSettings"
+          type="button"
+          aria-label="Abrir ajustes"
+          title="Ajustes"
+        >
+          <span class="icon" aria-hidden="true">⚙️</span>
+        </button>
+      </div>
     </header>
 
     <!-- Hero -->
@@ -116,8 +126,14 @@
       <div class="heroCard">
 
         <div class="heroTop">
-          <div class="pill" id="tripPill">🧳 Salida</div>
-          <div class="streak" id="streakChip" title="Veces que completaste todo">
+          <div class="pill" id="tripPill" aria-label="Modo actual">🧳 Salida</div>
+
+          <div
+            class="streak"
+            id="streakChip"
+            title="Veces que completaste todo"
+            aria-label="Racha"
+          >
             ✨ 0
           </div>
         </div>
@@ -128,22 +144,35 @@
             <span id="progressPct">0%</span>
           </div>
 
-          <div class="progressBar"
-               role="progressbar"
-               aria-label="Progreso del checklist"
-               aria-valuemin="0"
-               aria-valuemax="100"
-               aria-valuenow="0">
+          <div
+            class="progressBar"
+            id="progressBar"
+            role="progressbar"
+            aria-label="Progreso del checklist"
+            aria-valuemin="0"
+            aria-valuemax="100"
+            aria-valuenow="0"
+          >
             <div class="progressFill" id="progressFill"></div>
           </div>
         </div>
 
-        <div class="heroActions">
-          <button class="btn primary" id="btnReset" type="button">
+        <div class="heroActions" aria-label="Acciones principales">
+          <button class="btn primary" id="btnAdd" type="button" aria-label="Agregar item">
+            <span aria-hidden="true">＋</span> Agregar
+          </button>
+
+          <button class="btn" id="btnReset" type="button" aria-label="Reiniciar checklist">
             <span aria-hidden="true">↺</span> Reiniciar
           </button>
-          <button class="btn" id="btnAdd" type="button">
-            <span aria-hidden="true">＋</span> Agregar
+        </div>
+
+        <div class="heroQuick" aria-label="Acciones rápidas">
+          <button class="btn mini" id="btnSelectAll" type="button" aria-label="Marcar todo">
+            ✅ Marcar todo
+          </button>
+          <button class="btn mini" id="btnUncheckAll" type="button" aria-label="Quitar todo">
+            ⬜ Quitar todo
           </button>
         </div>
 
@@ -152,17 +181,40 @@
 
     <!-- Tabs -->
     <section class="tabs" aria-label="Categorías">
-      <div class="tabRow" id="tabRow" role="tablist"></div>
+      <div class="tabRow" id="tabRow" role="tablist" aria-label="Categorías"></div>
     </section>
 
     <!-- Checklist -->
-    <section class="list" id="list" aria-label="Checklist"></section>
+    <section class="list" id="list" aria-label="Checklist" tabindex="-1"></section>
 
     <!-- Bottom bar -->
     <footer class="bottombar" aria-label="Acciones rápidas">
-      <button class="mini" id="btnSelectAll" type="button">✅ Marcar todo</button>
-      <button class="mini" id="btnUncheckAll" type="button">⬜ Quitar todo</button>
-      <button class="mini" id="btnShare" type="button">📤 Compartir</button>
+      <button
+        class="mini"
+        id="btnSelectAllFooter"
+        type="button"
+        aria-label="Marcar todo (barra inferior)"
+      >
+        ✅ Todo
+      </button>
+
+      <button
+        class="mini"
+        id="btnUncheckAllFooter"
+        type="button"
+        aria-label="Quitar todo (barra inferior)"
+      >
+        ⬜ Nada
+      </button>
+
+      <button
+        class="mini"
+        id="btnAddFooter"
+        type="button"
+        aria-label="Agregar (barra inferior)"
+      >
+        ＋ Agregar
+      </button>
     </footer>
 
     <!-- Toast -->
@@ -172,60 +224,162 @@
       SETTINGS MODAL
     ========================================================================= -->
     <div class="modalOverlay" id="settingsOverlay" aria-hidden="true">
-      <div class="modal" role="dialog" aria-modal="true" tabindex="-1">
+      <div class="modal" role="dialog" aria-modal="true" aria-label="Ajustes" tabindex="-1">
         <div class="modalHeader">
-          <h3>Ajustes</h3>
-          <button class="btn ghost" id="btnCloseSettings" type="button">✕</button>
+          <h3 class="modalTitle">Ajustes</h3>
+          <button
+            class="btn ghost"
+            id="btnCloseSettings"
+            type="button"
+            aria-label="Cerrar ajustes"
+            title="Cerrar"
+          >
+            ✕
+          </button>
         </div>
 
         <div class="modalBody">
 
-          <div class="settingRow">
-            <div>
-              <div class="settingTitle">Modo</div>
-              <div class="settingDesc">
-                Cambia el tipo de salida para checklist distinto.
+          <div class="settingGroup" aria-label="Configuración principal">
+            <div class="settingRow">
+              <div>
+                <div class="settingTitle">Modo</div>
+                <div class="settingDesc">
+                  Cada modo es una lista distinta.
+                </div>
+              </div>
+
+              <div class="settingRight">
+                <select id="tripMode" class="select" aria-label="Seleccionar modo">
+                  <option value="salida">Salida</option>
+                  <option value="viaje">Viaje</option>
+                  <option value="gira">Gira</option>
+                  <option value="playa">Playa</option>
+                  <option value="frio">Clima frío</option>
+                </select>
+
+                <button
+                  class="btn mini"
+                  id="btnManageModes"
+                  type="button"
+                  aria-label="Editar listas"
+                  title="Editar listas"
+                >
+                  ✏️
+                </button>
               </div>
             </div>
-            <select id="tripMode" class="select">
+
+            <div class="settingRow">
+              <div>
+                <div class="settingTitle">Animaciones</div>
+                <div class="settingDesc">Suavecito, no circo.</div>
+              </div>
+
+              <label class="switch" aria-label="Activar animaciones">
+                <input type="checkbox" id="toggleMotion" checked />
+                <span class="slider"></span>
+              </label>
+            </div>
+
+            <div class="settingRow">
+              <div>
+                <div class="settingTitle">Soniditos</div>
+                <div class="settingDesc">Un tick al marcar, si tu alma lo tolera.</div>
+              </div>
+
+              <label class="switch" aria-label="Activar sonido">
+                <input type="checkbox" id="toggleSound" checked />
+                <span class="slider"></span>
+              </label>
+            </div>
+          </div>
+
+          <div class="settingGroup" aria-label="Acciones peligrosas">
+            <div class="settingRow danger">
+              <div>
+                <div class="settingTitle">Borrar datos</div>
+                <div class="settingDesc">Elimina listas y progreso guardado.</div>
+              </div>
+
+              <button class="btn danger" id="btnWipe" type="button" aria-label="Borrar todo">
+                Borrar
+              </button>
+            </div>
+          </div>
+
+        </div>
+      </div>
+    </div>
+
+    <!-- =========================================================================
+      MODES MANAGER MODAL
+    ========================================================================= -->
+    <div
+      class="modalOverlay"
+      id="modesOverlay"
+      aria-hidden="true"
+      data-mode-key=""
+    >
+      <div class="modal" role="dialog" aria-modal="true" aria-label="Editar listas" tabindex="-1">
+        <div class="modalHeader">
+          <h3 class="modalTitle">Editar listas</h3>
+          <button
+            class="btn ghost"
+            id="btnCloseModes"
+            type="button"
+            aria-label="Cerrar editor de listas"
+            title="Cerrar"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div class="modalBody">
+
+          <div class="hint">
+            Renombra tus listas, crea nuevas o elimina las que no uses.
+          </div>
+
+          <label class="field">
+            <span>Lista actual</span>
+            <select id="modeEditorSelect" class="select" aria-label="Seleccionar lista para editar">
               <option value="salida">Salida</option>
               <option value="viaje">Viaje</option>
               <option value="gira">Gira</option>
               <option value="playa">Playa</option>
               <option value="frio">Clima frío</option>
             </select>
+          </label>
+
+          <label class="field">
+            <span>Nombre de la lista</span>
+            <input
+              id="newModeName"
+              class="input"
+              placeholder="Ej: Concierto, Camping, Ensayo..."
+              maxlength="24"
+              autocomplete="off"
+            />
+          </label>
+
+          <div class="hint">
+            Items en esta lista: <strong id="modeItemsCount">0</strong>
           </div>
 
-          <div class="settingRow">
-            <div>
-              <div class="settingTitle">Animaciones</div>
-              <div class="settingDesc">Porque sí. Cerebro feliz.</div>
-            </div>
-            <label class="switch">
-              <input type="checkbox" id="toggleMotion" checked />
-              <span class="slider"></span>
-            </label>
-          </div>
-
-          <div class="settingRow">
-            <div>
-              <div class="settingTitle">Soniditos</div>
-              <div class="settingDesc">Un tick satisfactorio al marcar.</div>
-            </div>
-            <label class="switch">
-              <input type="checkbox" id="toggleSound" checked />
-              <span class="slider"></span>
-            </label>
-          </div>
-
-          <div class="settingRow danger">
-            <div>
-              <div class="settingTitle">Borrar datos</div>
-              <div class="settingDesc">Elimina listas y progreso guardado.</div>
-            </div>
-            <button class="btn danger" id="btnWipe" type="button">
-              Borrar
+          <div class="heroQuick" aria-label="Acciones de la lista">
+            <button class="btn primary mini" id="btnCreateMode" type="button">
+              Guardar lista
             </button>
+            <button class="btn danger mini" id="btnDeleteMode" type="button">
+              Eliminar
+            </button>
+          </div>
+
+          <div class="divider" aria-hidden="true"></div>
+
+          <div class="modesList" id="modesList" aria-label="Lista de modos">
+            <!-- Render dinámico -->
           </div>
 
         </div>
@@ -236,30 +390,57 @@
       ADD MODAL
     ========================================================================= -->
     <div class="modalOverlay" id="addOverlay" aria-hidden="true">
-      <div class="modal" role="dialog" aria-modal="true" tabindex="-1">
+      <div class="modal" role="dialog" aria-modal="true" aria-label="Agregar item" tabindex="-1">
         <div class="modalHeader">
-          <h3>Agregar</h3>
-          <button class="btn ghost" id="btnCloseAdd" type="button">✕</button>
+          <h3 class="modalTitle">Agregar</h3>
+          <button
+            class="btn ghost"
+            id="btnCloseAdd"
+            type="button"
+            aria-label="Cerrar agregar"
+            title="Cerrar"
+          >
+            ✕
+          </button>
         </div>
 
         <div class="modalBody">
           <label class="field">
             <span>Nombre</span>
-            <input id="newName" class="input"
-                   placeholder="Ej: Cargador, medias, crema..."
-                   maxlength="60" autocomplete="off" />
+            <input
+              id="newName"
+              class="input"
+              placeholder="Ej: Cargador, llaves, medias..."
+              maxlength="60"
+              autocomplete="off"
+            />
           </label>
 
           <label class="field">
             <span>Categoría</span>
-            <select id="newCat" class="select"></select>
+            <select id="newCat" class="select" aria-label="Seleccionar categoría"></select>
           </label>
 
           <label class="field">
             <span>Emoji (opcional)</span>
-            <input id="newEmoji" class="input"
-                   placeholder="Ej: 🔌"
-                   maxlength="2" autocomplete="off" />
+            <input
+              id="newEmoji"
+              class="input"
+              placeholder="Ej: 🔌"
+              maxlength="8"
+              autocomplete="off"
+            />
+          </label>
+
+          <label class="field">
+            <span>Lista destino</span>
+            <select id="newModeTarget" class="select" aria-label="Seleccionar lista destino">
+              <option value="salida">Salida</option>
+              <option value="viaje">Viaje</option>
+              <option value="gira">Gira</option>
+              <option value="playa">Playa</option>
+              <option value="frio">Clima frío</option>
+            </select>
           </label>
 
           <button class="btn primary full" id="btnCreate" type="button">
@@ -269,41 +450,163 @@
       </div>
     </div>
 
+    <!-- =========================================================================
+      EDIT MODAL
+    ========================================================================= -->
+    <div class="modalOverlay" id="editOverlay" aria-hidden="true" data-editing-id="">
+      <div class="modal" role="dialog" aria-modal="true" aria-label="Editar item" tabindex="-1">
+        <div class="modalHeader">
+          <h3 class="modalTitle">Editar</h3>
+          <button
+            class="btn ghost"
+            id="btnCloseEdit"
+            type="button"
+            aria-label="Cerrar editar"
+            title="Cerrar"
+          >
+            ✕
+          </button>
+        </div>
+
+        <div class="modalBody">
+          <label class="field">
+            <span>Nombre</span>
+            <input
+              id="editName"
+              class="input"
+              placeholder="Ej: Cargador, llaves..."
+              maxlength="60"
+              autocomplete="off"
+            />
+          </label>
+
+          <label class="field">
+            <span>Categoría</span>
+            <select id="editCat" class="select" aria-label="Editar categoría"></select>
+          </label>
+
+          <label class="field">
+            <span>Emoji (opcional)</span>
+            <input
+              id="editEmoji"
+              class="input"
+              placeholder="Ej: 🔑"
+              maxlength="8"
+              autocomplete="off"
+            />
+          </label>
+
+          <button class="btn primary full" id="btnSaveEdit" type="button">
+            Guardar cambios
+          </button>
+
+          <div class="divider" aria-hidden="true"></div>
+
+          <div class="hint">
+            ¿También lo quieres en otra lista? Lo agrega sin quitarlo de esta.
+          </div>
+
+          <label class="field">
+            <span>Agregar también a lista</span>
+            <select id="dupMode" class="select" aria-label="Agregar también a otra lista">
+              <option value="salida">Salida</option>
+              <option value="viaje">Viaje</option>
+              <option value="gira">Gira</option>
+              <option value="playa">Playa</option>
+              <option value="frio">Clima frío</option>
+            </select>
+          </label>
+
+          <button class="btn full" id="btnAddToMode" type="button">
+            Agregar a esa lista
+          </button>
+        </div>
+      </div>
+    </div>
+
   </main>
 
   <!-- =========================================================================
-    APP ENTRY
+    FOOTER BUTTON MIRRORS
   ========================================================================= -->
-  <script type="module" src="./src/app.js"></script>
+  <script>
+    (function () {
+      const byId = (id) => document.getElementById(id);
+
+      function mirrorClick(sourceId, targetId) {
+        const source = byId(sourceId);
+        const target = byId(targetId);
+        if (!source || !target) return;
+
+        source.addEventListener('click', () => {
+          target.click();
+        }, { passive: true });
+      }
+
+      mirrorClick('btnSelectAllFooter', 'btnSelectAll');
+      mirrorClick('btnUncheckAllFooter', 'btnUncheckAll');
+      mirrorClick('btnAddFooter', 'btnAdd');
+    })();
+  </script>
 
   <!-- =========================================================================
     SERVICE WORKER REGISTER + UPDATE FLOW
   ========================================================================= -->
   <script>
-    if ("serviceWorker" in navigator) {
-      navigator.serviceWorker.register("./sw.js").then((reg) => {
+    (function () {
+      if (!('serviceWorker' in navigator)) return;
 
-        reg.addEventListener("updatefound", () => {
+      let refreshing = false;
+
+      navigator.serviceWorker.register('./sw.js').then((reg) => {
+        if (reg.waiting && navigator.serviceWorker.controller) {
+          showUpdateBanner(reg.waiting);
+        }
+
+        reg.addEventListener('updatefound', () => {
           const newWorker = reg.installing;
-          newWorker.addEventListener("statechange", () => {
-            if (newWorker.state === "installed" && navigator.serviceWorker.controller) {
-              document.getElementById("updateBanner").hidden = false;
+          if (!newWorker) return;
 
-              document.getElementById("btnUpdateNow").onclick = () => {
-                newWorker.postMessage("SKIP_WAITING");
-                location.reload();
-              };
-
-              document.getElementById("btnUpdateLater").onclick = () => {
-                document.getElementById("updateBanner").hidden = true;
-              };
+          newWorker.addEventListener('statechange', () => {
+            if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
+              showUpdateBanner(newWorker);
             }
           });
         });
-
+      }).catch((err) => {
+        console.warn('No se pudo registrar el Service Worker:', err);
       });
-    }
+
+      navigator.serviceWorker.addEventListener('controllerchange', () => {
+        if (refreshing) return;
+        refreshing = true;
+        location.reload();
+      });
+
+      function showUpdateBanner(worker) {
+        const banner = document.getElementById('updateBanner');
+        const btnNow = document.getElementById('btnUpdateNow');
+        const btnLater = document.getElementById('btnUpdateLater');
+        if (!banner || !btnNow || !btnLater) return;
+
+        banner.hidden = false;
+
+        btnNow.onclick = () => {
+          try {
+            worker.postMessage({ type: 'SKIP_WAITING' });
+          } catch {}
+        };
+
+        btnLater.onclick = () => {
+          banner.hidden = true;
+        };
+      }
+    })();
   </script>
 
+  <!-- =========================================================================
+    APP ENTRY
+  ========================================================================= -->
+  <script type="module" src="./src/app.js"></script>
 </body>
 </html>
