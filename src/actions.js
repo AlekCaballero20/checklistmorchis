@@ -1,7 +1,6 @@
 /* =============================================================================
-  /src/actions.js — App actions (domain logic) — PRO v5.0
-  - ✅ NO DOM manipulation inside (acciones puras-ish)
-  - ✅ Habla con storage + fx vía deps inyectados
+  /src/actions.js — App actions (domain logic) — PRO v6.0
+  - ✅ NO DOM manipulation inside
   - ✅ Multi-mode robusto + backward compatible
   - ✅ Soporta:
       toggleDone / deleteItem / resetChecks / setAll / createItem
@@ -9,27 +8,11 @@
       assignItemToModes / toggleItemMode / setItemModes
       changeMode / wipeAll / onCompletedOnce
       createMode / renameMode / updateMode / deleteMode / duplicateMode / openModeEditor
-  - ✅ DATA SHAPE (multi-mode, backward compatible)
-      data = {
-        version: 3,
-        mode,
-        cats,
-        catsByMode: { [mode]: Cat[] },
-        itemsByMode: { [mode]: Item[] },
-        modes: {
-          [mode]: {
-            key,
-            name,
-            label,
-            icon,
-            createdAt,
-            updatedAt
-          }
-        },
-        __completedOnceByMode: { [mode]: boolean }
-      }
+  - ✅ Compat con data shape viejo y nuevo
+  - ✅ Unifica completedOnceByMode / __completedOnceByMode
   - ✅ createItem({ targetMode }) crea en la lista elegida
   - ✅ assignItemToModes agrega a otras listas sin romper el item origen
+  - ✅ Menos sorpresas con setState y saveData/saveSettings
 ============================================================================= */
 
 'use strict';
@@ -40,29 +23,22 @@
  * @param {Function} params.getState   () => state
  * @param {Function} params.setState   (partial | updaterFn, options?) => void
  * @param {Object} params.deps
- * @param {Function} params.deps.newPreset (mode) => data shape / defaults
- * @param {Function} params.deps.saveSettings () => void
- * @param {Function} params.deps.saveData () => void
- * @param {Function} params.deps.toast (msg) => void
- * @param {Function} params.deps.haptic (ms) => void
- * @param {Function} params.deps.tickSound () => void
- * @param {Function} params.deps.confetti () => void
- * @param {Function} params.deps.uid () => string
  */
 export function createActions({ getState, setState, deps = {} }) {
   /* =========================
      DEPS
   ========================= */
+
   const newPreset = deps.newPreset || ((m) => ({
     version: 3,
     mode: m,
     cats: [],
     items: [],
-    __completedOnce: false
+    completedOnceByMode: { [m]: false }
   }));
 
-  const saveSettings = deps.saveSettings || (() => {});
-  const saveData = deps.saveData || (() => {});
+  const saveSettings = typeof deps.saveSettings === 'function' ? deps.saveSettings : () => {};
+  const saveData = typeof deps.saveData === 'function' ? deps.saveData : () => {};
   const uidFn = typeof deps.uid === 'function' ? deps.uid : null;
 
   const toast = typeof deps.toast === 'function' ? deps.toast : null;
@@ -116,6 +92,20 @@ export function createActions({ getState, setState, deps = {} }) {
     return s || 'modo';
   }
 
+  function slugifyCatKey(v) {
+    const raw = ensureString(v, 40).toLowerCase();
+
+    const s = raw
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9\s_-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^[-_]+|[-_]+$/g, '');
+
+    return s || 'otros';
+  }
+
   function normalizeEmoji(v) {
     const e = ensureString(v, 8);
     return e ? e : null;
@@ -147,24 +137,42 @@ export function createActions({ getState, setState, deps = {} }) {
     return JSON.parse(JSON.stringify(v));
   }
 
+  function commitState(updater) {
+    if (typeof setState !== 'function') return;
+
+    try {
+      setState(updater);
+      return;
+    } catch {}
+
+    try {
+      const prev = snap();
+      const next = typeof updater === 'function' ? updater(prev) : updater;
+      if (next && typeof next === 'object') {
+        setState(next);
+      }
+    } catch {}
+  }
+
   /* =========================
      NORMALIZERS
   ========================= */
 
   function repairCat_(cat) {
     if (typeof cat === 'string') {
-      const key = ensureString(cat, 40) || 'otros';
+      const key = slugifyCatKey(cat);
+      const label = key === 'otros' ? 'Otros' : ensureString(cat, 60) || key;
       return {
         id: key,
         key,
-        name: key === 'otros' ? 'Otros' : key,
-        label: key === 'otros' ? 'Otros' : key,
-        emoji: null
+        name: label,
+        label,
+        emoji: key === 'otros' ? '✨' : null
       };
     }
 
     if (isPlainObject(cat)) {
-      const key = ensureString(cat.key || cat.id || cat.slug || cat.name || 'otros', 40) || 'otros';
+      const key = slugifyCatKey(cat.key || cat.id || cat.slug || cat.name || 'otros');
       const label = ensureString(cat.label || cat.name || key || 'Otros', 60) || 'Otros';
 
       return {
@@ -182,7 +190,7 @@ export function createActions({ getState, setState, deps = {} }) {
       key: 'otros',
       name: 'Otros',
       label: 'Otros',
-      emoji: null
+      emoji: '✨'
     };
   }
 
@@ -193,8 +201,8 @@ export function createActions({ getState, setState, deps = {} }) {
 
     return {
       id: ensureString(it?.id || makeId(), 140),
-      cat: ensureString(it?.cat || 'otros', 40) || 'otros',
-      name: ensureString(it?.name || 'Sin nombre', 60) || 'Sin nombre',
+      cat: slugifyCatKey(it?.cat || 'otros'),
+      name: ensureString(it?.name || 'Sin nombre', 80) || 'Sin nombre',
       emoji: it?.emoji ? normalizeEmoji(it.emoji) : null,
       done: !!it?.done,
       modes: repairedModes?.length ? repairedModes : null,
@@ -204,16 +212,23 @@ export function createActions({ getState, setState, deps = {} }) {
 
   function repairModeMeta_(key, meta = {}) {
     const fixedKey = slugifyModeKey(key || meta?.key || meta?.name || 'modo');
-    const label = ensureString(meta?.label || meta?.name || fixedKey, 60) || fixedKey;
+    const cleanName = ensureString(meta?.name || stripLeadingEmoji(meta?.label) || fixedKey, 60) || fixedKey;
+    const cleanLabel = ensureString(meta?.label || `🧳 ${cleanName}`, 60) || `🧳 ${cleanName}`;
 
     return {
       key: fixedKey,
-      name: label,
-      label,
+      name: cleanName,
+      label: cleanLabel,
       icon: normalizeEmoji(meta?.icon),
       createdAt: ensureString(meta?.createdAt || '', 60) || nowIso(),
       updatedAt: ensureString(meta?.updatedAt || '', 60) || nowIso()
     };
+  }
+
+  function stripLeadingEmoji(text = '') {
+    return String(text)
+      .replace(/^[^\p{L}\p{N}]+/u, '')
+      .trim();
   }
 
   /* =========================
@@ -221,7 +236,7 @@ export function createActions({ getState, setState, deps = {} }) {
   ========================= */
 
   function ensureModesMap_(data, activeMode) {
-    const currentMode = String(data?.mode || activeMode || 'salida');
+    const currentMode = slugifyModeKey(data?.mode || activeMode || 'salida');
     const raw = isPlainObject(data?.modes) ? data.modes : {};
     const out = {};
 
@@ -235,16 +250,26 @@ export function createActions({ getState, setState, deps = {} }) {
     const modeKeys = uniq([currentMode, ...itemModes, ...catModes, ...Object.keys(out)]);
 
     for (const mk of modeKeys) {
-      if (!out[mk]) {
-        out[mk] = repairModeMeta_(mk, { name: mk, label: mk });
+      const sk = slugifyModeKey(mk);
+      if (!out[sk]) {
+        out[sk] = repairModeMeta_(sk, { name: sk, label: `🧳 ${stripLeadingEmoji(sk) || sk}` });
       }
     }
 
     return out;
   }
 
+  function readCompletedMap_(data, mode) {
+    const legacy = isPlainObject(data?.__completedOnceByMode) ? data.__completedOnceByMode : {};
+    const modern = isPlainObject(data?.completedOnceByMode) ? data.completedOnceByMode : {};
+    const merged = { ...legacy, ...modern };
+
+    if (!(mode in merged)) merged[mode] = !!data?.__completedOnce || false;
+    return merged;
+  }
+
   function ensureDataShape_(data, activeMode) {
-    const mode = String(data?.mode || activeMode || 'salida');
+    const mode = slugifyModeKey(data?.mode || activeMode || 'salida');
     const basePreset = newPreset(mode) || {};
 
     const cats =
@@ -259,7 +284,7 @@ export function createActions({ getState, setState, deps = {} }) {
     if (isPlainObject(data?.itemsByMode)) {
       itemsByMode = { ...data.itemsByMode };
       catsByMode = isPlainObject(data?.catsByMode) ? { ...data.catsByMode } : {};
-      doneByMode = isPlainObject(data?.__completedOnceByMode) ? { ...data.__completedOnceByMode } : {};
+      doneByMode = readCompletedMap_(data, mode);
     } else {
       const legacyItems =
         Array.isArray(data?.items) ? data.items
@@ -273,12 +298,14 @@ export function createActions({ getState, setState, deps = {} }) {
 
     const normalizedItemsByMode = {};
     for (const [mk, arr] of Object.entries(itemsByMode)) {
-      normalizedItemsByMode[String(mk)] = Array.isArray(arr) ? arr.map(repairItem_) : [];
+      const cleanMode = slugifyModeKey(mk);
+      normalizedItemsByMode[cleanMode] = Array.isArray(arr) ? arr.map(repairItem_) : [];
     }
 
     const normalizedCatsByMode = {};
     for (const [mk, arr] of Object.entries(catsByMode)) {
-      normalizedCatsByMode[String(mk)] = Array.isArray(arr) ? arr.map(repairCat_) : [];
+      const cleanMode = slugifyModeKey(mk);
+      normalizedCatsByMode[cleanMode] = Array.isArray(arr) ? ensureCatsContainOtros_(arr.map(repairCat_)) : [];
     }
 
     if (!Array.isArray(normalizedItemsByMode[mode])) {
@@ -286,7 +313,9 @@ export function createActions({ getState, setState, deps = {} }) {
     }
 
     if (!Array.isArray(normalizedCatsByMode[mode])) {
-      normalizedCatsByMode[mode] = Array.isArray(cats) ? cats.map(repairCat_) : [];
+      normalizedCatsByMode[mode] = ensureCatsContainOtros_(
+        Array.isArray(cats) ? cats.map(repairCat_) : []
+      );
     }
 
     const modes = ensureModesMap_({
@@ -296,51 +325,60 @@ export function createActions({ getState, setState, deps = {} }) {
       catsByMode: normalizedCatsByMode
     }, mode);
 
+    const completedOnceByMode = {};
+    for (const mk of Object.keys(modes)) {
+      completedOnceByMode[mk] = !!doneByMode[mk];
+    }
+
     return {
       version: 3,
       mode,
-      cats: Array.isArray(cats) ? cats.map(repairCat_) : [],
+      cats: ensureCatsContainOtros_(Array.isArray(cats) ? cats.map(repairCat_) : []),
       catsByMode: normalizedCatsByMode,
       itemsByMode: normalizedItemsByMode,
       modes,
-      __completedOnceByMode: { ...doneByMode }
+      completedOnceByMode,
+      __completedOnceByMode: { ...completedOnceByMode }
     };
   }
 
   function getModeItems_(data, mode) {
-    const m = String(mode || data?.mode || 'salida');
+    const m = slugifyModeKey(mode || data?.mode || 'salida');
     if (isPlainObject(data?.itemsByMode) && Array.isArray(data.itemsByMode[m])) return data.itemsByMode[m];
     return [];
   }
 
   function setModeItems_(data, mode, items) {
-    const m = String(mode || data?.mode || 'salida');
+    const m = slugifyModeKey(mode || data?.mode || 'salida');
     if (!isPlainObject(data.itemsByMode)) data.itemsByMode = {};
-    data.itemsByMode[m] = Array.isArray(items) ? items : [];
+    data.itemsByMode[m] = Array.isArray(items) ? items.map(repairItem_) : [];
   }
 
   function getModeCats_(data, mode) {
-    const m = String(mode || data?.mode || 'salida');
+    const m = slugifyModeKey(mode || data?.mode || 'salida');
     if (isPlainObject(data?.catsByMode) && Array.isArray(data.catsByMode[m])) return data.catsByMode[m];
     if (Array.isArray(data?.cats)) return data.cats;
     return [];
   }
 
   function setModeCats_(data, mode, cats) {
-    const m = String(mode || data?.mode || 'salida');
+    const m = slugifyModeKey(mode || data?.mode || 'salida');
     if (!isPlainObject(data.catsByMode)) data.catsByMode = {};
-    data.catsByMode[m] = Array.isArray(cats) ? cats : [];
+    data.catsByMode[m] = ensureCatsContainOtros_(Array.isArray(cats) ? cats.map(repairCat_) : []);
   }
 
   function getCompletedFlag_(data, mode) {
-    const m = String(mode || data?.mode || 'salida');
-    if (isPlainObject(data?.__completedOnceByMode)) return !!data.__completedOnceByMode[m];
-    return false;
+    const m = slugifyModeKey(mode || data?.mode || 'salida');
+    const modern = isPlainObject(data?.completedOnceByMode) ? data.completedOnceByMode : {};
+    const legacy = isPlainObject(data?.__completedOnceByMode) ? data.__completedOnceByMode : {};
+    return !!(modern[m] ?? legacy[m] ?? false);
   }
 
   function setCompletedFlag_(data, mode, val) {
-    const m = String(mode || data?.mode || 'salida');
+    const m = slugifyModeKey(mode || data?.mode || 'salida');
+    if (!isPlainObject(data.completedOnceByMode)) data.completedOnceByMode = {};
     if (!isPlainObject(data.__completedOnceByMode)) data.__completedOnceByMode = {};
+    data.completedOnceByMode[m] = !!val;
     data.__completedOnceByMode[m] = !!val;
   }
 
@@ -348,14 +386,15 @@ export function createActions({ getState, setState, deps = {} }) {
     const m = slugifyModeKey(mode || data?.mode || 'salida');
     if (!isPlainObject(data.modes)) data.modes = {};
 
-    const prev = data.modes[m] || repairModeMeta_(m, { name: m, label: m });
-    data.modes[m] = repairModeMeta_(m, {
+    const prev = data.modes[m] || repairModeMeta_(m, { name: m, label: `🧳 ${m}` });
+    const nextMeta = repairModeMeta_(m, {
       ...prev,
       ...extra,
       updatedAt: nowIso()
     });
 
-    return data.modes[m];
+    data.modes[m] = nextMeta;
+    return nextMeta;
   }
 
   function ensureCatsContainOtros_(cats) {
@@ -386,13 +425,18 @@ export function createActions({ getState, setState, deps = {} }) {
     if (!Array.isArray(data.catsByMode[m])) {
       const p = newPreset(m) || {};
       const presetCats = Array.isArray(p.cats) ? p.cats.map(repairCat_) : [];
-      data.catsByMode[m] = ensureCatsContainOtros_(presetCats.length ? presetCats : (Array.isArray(data.cats) ? data.cats : []));
+      data.catsByMode[m] = ensureCatsContainOtros_(
+        presetCats.length ? presetCats : (Array.isArray(data.cats) ? data.cats : [])
+      );
     } else {
       data.catsByMode[m] = ensureCatsContainOtros_(data.catsByMode[m]);
     }
 
+    if (!isPlainObject(data.completedOnceByMode)) data.completedOnceByMode = {};
     if (!isPlainObject(data.__completedOnceByMode)) data.__completedOnceByMode = {};
-    if (!(m in data.__completedOnceByMode)) data.__completedOnceByMode[m] = false;
+
+    if (!(m in data.completedOnceByMode)) data.completedOnceByMode[m] = false;
+    if (!(m in data.__completedOnceByMode)) data.__completedOnceByMode[m] = !!data.completedOnceByMode[m];
 
     ensureModeMeta_(data, m);
   }
@@ -414,7 +458,7 @@ export function createActions({ getState, setState, deps = {} }) {
 
     if (data?.mode) modeKeys.add(String(data.mode));
 
-    return Array.from(modeKeys);
+    return Array.from(modeKeys).map(slugifyModeKey);
   }
 
   function canDeleteMode_(data, mode) {
@@ -424,7 +468,7 @@ export function createActions({ getState, setState, deps = {} }) {
 
   function ensureCatExistsInMode_(data, mode, catKey, fallbackLabel = null) {
     const m = slugifyModeKey(mode);
-    const cleanCat = ensureString(catKey, 40) || 'otros';
+    const cleanCat = slugifyCatKey(catKey);
     ensureModeInitialized_(data, m);
 
     const cats = getModeCats_(data, m);
@@ -448,7 +492,7 @@ export function createActions({ getState, setState, deps = {} }) {
   function updateData(mutator, opts = {}) {
     const doSave = opts.save !== false;
 
-    setState((s) => {
+    commitState((s) => {
       const activeMode = getActiveMode(s);
       const next = { ...s };
 
@@ -461,12 +505,13 @@ export function createActions({ getState, setState, deps = {} }) {
           Object.entries(shaped.catsByMode || {}).map(([k, arr]) => [k, arr.map(c => ({ ...c }))])
         ),
         itemsByMode: Object.fromEntries(
-          Object.entries(shaped.itemsByMode).map(([k, arr]) => [k, arr.map(i => ({ ...i }))])
+          Object.entries(shaped.itemsByMode || {}).map(([k, arr]) => [k, arr.map(i => ({ ...i }))])
         ),
         modes: Object.fromEntries(
           Object.entries(shaped.modes || {}).map(([k, meta]) => [k, { ...meta }])
         ),
-        __completedOnceByMode: { ...shaped.__completedOnceByMode }
+        completedOnceByMode: { ...(shaped.completedOnceByMode || {}) },
+        __completedOnceByMode: { ...(shaped.__completedOnceByMode || shaped.completedOnceByMode || {}) }
       };
 
       ensureModeInitialized_(next.data, activeMode);
@@ -479,7 +524,7 @@ export function createActions({ getState, setState, deps = {} }) {
   }
 
   function updateSettings(mutator) {
-    setState((s) => {
+    commitState((s) => {
       const next = { ...s, settings: { ...(s.settings || {}) } };
       mutator(next);
       return next;
@@ -566,10 +611,10 @@ export function createActions({ getState, setState, deps = {} }) {
   }
 
   function createItem({ name, emoji = null, cat = 'otros', targetMode = null, modes = null } = {}) {
-    const cleanName = ensureString(name, 60);
-    const cleanCat = ensureString(cat, 40) || 'otros';
+    const cleanName = ensureString(name, 80);
+    const cleanCat = slugifyCatKey(cat || 'otros');
     const cleanEmoji = normalizeEmoji(emoji);
-    const cleanTargetMode = slugifyModeKey(targetMode || '');
+    const cleanTargetMode = targetMode ? slugifyModeKey(targetMode) : '';
     const cleanModes = Array.isArray(modes)
       ? uniq(modes.map(x => slugifyModeKey(x)).filter(Boolean))
       : null;
@@ -599,7 +644,7 @@ export function createActions({ getState, setState, deps = {} }) {
         name: cleanName,
         emoji: cleanEmoji,
         done: false,
-        modes: cleanModes?.length ? cleanModes : null,
+        modes: cleanModes?.length ? uniq([modeToUse, ...cleanModes]) : [modeToUse],
         originId: null
       });
 
@@ -632,9 +677,9 @@ export function createActions({ getState, setState, deps = {} }) {
     const hasCat = cat !== undefined;
     const hasModes = modes !== undefined;
 
-    const cleanName = hasName ? ensureString(name, 60) : null;
+    const cleanName = hasName ? ensureString(name, 80) : null;
     const cleanEmoji = hasEmoji ? normalizeEmoji(emoji) : null;
-    const cleanCat = hasCat ? (ensureString(cat, 40) || 'otros') : null;
+    const cleanCat = hasCat ? slugifyCatKey(cat || 'otros') : null;
     const cleanModes = hasModes
       ? (Array.isArray(modes) ? uniq(modes.map(x => slugifyModeKey(x)).filter(Boolean)) : null)
       : null;
@@ -646,8 +691,10 @@ export function createActions({ getState, setState, deps = {} }) {
     }
 
     let updated = false;
+    let currentMode = '';
 
     updateData((next, ctx) => {
+      currentMode = ctx.mode;
       const items = getModeItems_(next.data, ctx.mode);
       const idx = findIndexById(items, cleanId);
       if (idx < 0) return;
@@ -661,7 +708,9 @@ export function createActions({ getState, setState, deps = {} }) {
         nextIt.cat = cleanCat;
         ensureCatExistsInMode_(next.data, ctx.mode, cleanCat, cleanCat);
       }
-      if (hasModes) nextIt.modes = cleanModes?.length ? cleanModes : [ctx.mode];
+      if (hasModes) {
+        nextIt.modes = cleanModes?.length ? uniq([ctx.mode, ...cleanModes]) : [ctx.mode];
+      }
 
       items[idx] = nextIt;
       setModeItems_(next.data, ctx.mode, items);
@@ -672,11 +721,9 @@ export function createActions({ getState, setState, deps = {} }) {
     if (!updated) return { ok: false, reason: 'NOT_FOUND' };
 
     if (hasModes) {
-      const s = snap();
-      const currentMode = getActiveMode(s);
-      const wanted = cleanModes?.length ? cleanModes : [currentMode];
+      const wanted = cleanModes?.length ? uniq([currentMode, ...cleanModes]) : [currentMode];
       const other = wanted.filter(m => m !== currentMode);
-      if (other.length) assignItemToModes(cleanId, other, { keepDone: false, silent: true });
+      if (other.length) assignItemToModes(cleanId, other, { keepDone: false, silent: true, fromMode: currentMode });
     }
 
     safeToast('Actualizado ✅');
@@ -686,7 +733,7 @@ export function createActions({ getState, setState, deps = {} }) {
 
   function moveItem(id, toCat) {
     const cleanId = ensureString(id, 140);
-    const cleanCat = ensureString(toCat, 40) || 'otros';
+    const cleanCat = slugifyCatKey(toCat || 'otros');
     if (!cleanId) return { ok: false, reason: 'BAD_ID' };
 
     let moved = false;
@@ -718,7 +765,7 @@ export function createActions({ getState, setState, deps = {} }) {
 
   function duplicateItem(id, toCat) {
     const cleanId = ensureString(id, 140);
-    const cleanCat = ensureString(toCat, 40) || 'otros';
+    const cleanCat = slugifyCatKey(toCat || 'otros');
     if (!cleanId) return { ok: false, reason: 'BAD_ID' };
 
     let copied = false;
@@ -734,10 +781,10 @@ export function createActions({ getState, setState, deps = {} }) {
       items.unshift({
         id: makeId(),
         cat: cleanCat,
-        name: ensureString(it.name, 60) || 'Item',
+        name: ensureString(it.name, 80) || 'Item',
         emoji: it.emoji || null,
         done: false,
-        modes: null,
+        modes: Array.isArray(it.modes) && it.modes.length ? [...it.modes] : [ctx.mode],
         originId: it.originId || it.id
       });
 
@@ -798,10 +845,10 @@ export function createActions({ getState, setState, deps = {} }) {
         list.unshift({
           id: makeId(),
           cat: ensureString(source.cat, 40) || 'otros',
-          name: ensureString(source.name, 60) || 'Item',
+          name: ensureString(source.name, 80) || 'Item',
           emoji: source.emoji || null,
           done: keepDone ? !!source.done : false,
-          modes: null,
+          modes: [m],
           originId
         });
 
@@ -830,7 +877,7 @@ export function createActions({ getState, setState, deps = {} }) {
     const s = snap();
     const currentMode = getActiveMode(s);
     const wanted = uniq((modes || []).map(x => slugifyModeKey(x)).filter(Boolean));
-    const forced = wanted.length ? wanted : [currentMode];
+    const forced = wanted.length ? uniq([currentMode, ...wanted]) : [currentMode];
 
     let ok = false;
 
@@ -848,7 +895,7 @@ export function createActions({ getState, setState, deps = {} }) {
     if (!ok) return { ok: false, reason: 'NOT_FOUND' };
 
     const other = forced.filter(m => m !== currentMode);
-    if (other.length) assignItemToModes(cleanId, other, { keepDone: false, silent: true });
+    if (other.length) assignItemToModes(cleanId, other, { keepDone: false, silent: true, fromMode: currentMode });
 
     safeToast('Listas actualizadas ✅');
     safeHaptic(8);
@@ -874,7 +921,7 @@ export function createActions({ getState, setState, deps = {} }) {
     const cur = Array.isArray(it.modes) && it.modes.length ? uniq(it.modes) : [currentMode];
 
     const willAdd = !cur.includes(m);
-    let nextModes = willAdd ? [...cur, m] : cur.filter(x => x !== m);
+    let nextModes = willAdd ? uniq([...cur, m]) : cur.filter(x => x !== m);
     if (!nextModes.length) nextModes = [currentMode];
 
     updateData((next, ctx) => {
@@ -887,7 +934,7 @@ export function createActions({ getState, setState, deps = {} }) {
       setCompletedFlag_(next.data, ctx.mode, false);
     });
 
-    if (willAdd) assignItemToModes(cleanId, [m], { keepDone: false, silent: true });
+    if (willAdd) assignItemToModes(cleanId, [m], { keepDone: false, silent: true, fromMode: currentMode });
 
     safeToast('Listas actualizadas ✅');
     safeHaptic(8);
@@ -1038,7 +1085,7 @@ export function createActions({ getState, setState, deps = {} }) {
 
     if (!sourceMeta) return { ok: false, reason: 'NOT_FOUND' };
 
-    const baseName = requestedName || `${sourceMeta.label || sourceMeta.name || key} copia`;
+    const baseName = requestedName || `${stripLeadingEmoji(sourceMeta.label || sourceMeta.name || key)} copia`;
     let createdKey = '';
     let createdMeta = null;
 
@@ -1069,7 +1116,7 @@ export function createActions({ getState, setState, deps = {} }) {
 
       createdMeta = ensureModeMeta_(next.data, finalKey, {
         name: baseName,
-        label: baseName,
+        label: `🧳 ${baseName}`,
         icon: sourceMeta.icon || null,
         createdAt: nowIso(),
         updatedAt: nowIso()
@@ -1109,7 +1156,8 @@ export function createActions({ getState, setState, deps = {} }) {
       delete next.data.itemsByMode[key];
       delete next.data.catsByMode[key];
       delete next.data.modes[key];
-      delete next.data.__completedOnceByMode[key];
+      if (isPlainObject(next.data.completedOnceByMode)) delete next.data.completedOnceByMode[key];
+      if (isPlainObject(next.data.__completedOnceByMode)) delete next.data.__completedOnceByMode[key];
 
       if (next.data.mode === key) {
         next.data.mode = fallbackMode;
@@ -1150,25 +1198,42 @@ export function createActions({ getState, setState, deps = {} }) {
   ========================= */
 
   function changeMode(mode) {
-    const m = slugifyModeKey(mode) || 'salida';
+    const m = slugifyModeKey(mode || 'salida') || 'salida';
 
-    updateSettings((next) => {
-      next.settings.tripMode = m;
-    });
-
-    setState((s) => {
+    commitState((s) => {
       const next = { ...s };
       next.data = ensureDataShape_(s.data, m);
       ensureModeInitialized_(next.data, m);
       next.data.mode = m;
       next.activeCat = 'all';
+      next.settings = {
+        ...(s.settings || {}),
+        tripMode: m
+      };
       return next;
     });
 
+    saveSettings();
     saveData();
-    safeToast('Lista cambiada ✅');
-    safeHaptic(12);
     return { ok: true, modeKey: m };
+  }
+
+  /* =========================
+     SETTINGS HELPERS
+  ========================= */
+
+  function setMotion(value) {
+    updateSettings((next) => {
+      next.settings.motion = !!value;
+    });
+    return { ok: true, value: !!value };
+  }
+
+  function setSound(value) {
+    updateSettings((next) => {
+      next.settings.sound = !!value;
+    });
+    return { ok: true, value: !!value };
   }
 
   /* =========================
@@ -1183,7 +1248,7 @@ export function createActions({ getState, setState, deps = {} }) {
     ensureModeInitialized_(fresh, baseMode);
     fresh.mode = baseMode;
 
-    setState((s) => ({
+    commitState((s) => ({
       ...s,
       activeCat: 'all',
       settings: {
@@ -1263,6 +1328,10 @@ export function createActions({ getState, setState, deps = {} }) {
     duplicateMode,
     openModeEditor,
 
+    // settings helpers
+    setMotion,
+    setSound,
+
     // destructive
     wipeAll,
 
@@ -1275,6 +1344,7 @@ export function createActions({ getState, setState, deps = {} }) {
       normalizeEmoji,
       uniq,
       slugifyModeKey,
+      slugifyCatKey,
       shallowClone
     }
   };

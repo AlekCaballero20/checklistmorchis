@@ -1,5 +1,5 @@
 /* =============================================================================
-  /src/storage.js — Local-first storage + migrations — PRO v5.0
+  /src/storage.js — Local-first storage + migrations — PRO v6.0
   - ✅ loadSettings / saveSettings (sanitiza + defaults + versionado suave)
   - ✅ loadData / saveData (repair + migraciones + compat)
   - ✅ Soporta formato moderno:
@@ -12,8 +12,10 @@
             version: 3,
             mode,
             cats,
+            catsByMode,
             itemsByMode,
             modes,
+            completedOnceByMode,
             __completedOnceByMode
           }
         }
@@ -26,6 +28,7 @@
       IDs únicos, strings recortados, cats válidas, modes válidos,
       compat de cats con {id,name} y {key,label}
   - ✅ Debounced savers con cancel/flush
+  - ✅ Unifica compat entre completedOnceByMode y __completedOnceByMode
 ============================================================================= */
 
 'use strict';
@@ -250,6 +253,9 @@ export function createStorage(cfg) {
         version: 3,
         mode,
         cats: legacyCats,
+        catsByMode: {
+          [mode]: legacyCats
+        },
         itemsByMode: {
           [mode]: legacyItems
         },
@@ -257,11 +263,14 @@ export function createStorage(cfg) {
           [mode]: repairModeMeta(mode, d?.modes?.[mode] || {
             key: mode,
             name: labelFromMode(mode),
-            label: labelFromMode(mode)
+            label: `🧳 ${labelFromMode(mode)}`
           })
         },
+        completedOnceByMode: {
+          [mode]: !!d.completedOnceByMode?.[mode] || !!d.__completedOnceByMode?.[mode] || !!d.__completedOnce
+        },
         __completedOnceByMode: {
-          [mode]: !!d.__completedOnce
+          [mode]: !!d.completedOnceByMode?.[mode] || !!d.__completedOnceByMode?.[mode] || !!d.__completedOnce
         }
       };
 
@@ -281,6 +290,14 @@ export function createStorage(cfg) {
       );
     }
 
+    const rawCatsByMode = isPlainObject(d.catsByMode) ? d.catsByMode : {};
+    const catsByMode = {};
+
+    for (const [mk, arr] of Object.entries(rawCatsByMode)) {
+      const key = slugifyModeKey(mk);
+      catsByMode[key] = repairCatsArray(Array.isArray(arr) ? arr : []);
+    }
+
     if (!itemsByMode[mode]) {
       const preset = newPresetSafe(mode);
       const presetItems =
@@ -291,10 +308,21 @@ export function createStorage(cfg) {
       itemsByMode[mode] = ensureUniqueItemIds(repairItemsArray(presetItems, cats));
     }
 
+    if (!catsByMode[mode]) {
+      const preset = newPresetSafe(mode);
+      const presetCats =
+        Array.isArray(preset?.catsByMode?.[mode]) ? preset.catsByMode[mode] :
+        Array.isArray(preset?.cats) ? preset.cats :
+        cats;
+
+      catsByMode[mode] = repairCatsArray(presetCats);
+    }
+
     const rawModes = isPlainObject(d.modes) ? d.modes : {};
     const allModeKeys = uniq([
       mode,
       ...Object.keys(itemsByMode).map(slugifyModeKey),
+      ...Object.keys(catsByMode).map(slugifyModeKey),
       ...Object.keys(rawModes).map(slugifyModeKey)
     ]);
 
@@ -304,7 +332,11 @@ export function createStorage(cfg) {
       modes[mk] = repairModeMeta(mk, meta);
     }
 
-    const rawCompleted = isPlainObject(d.__completedOnceByMode)
+    const rawCompletedModern = isPlainObject(d.completedOnceByMode)
+      ? d.completedOnceByMode
+      : {};
+
+    const rawCompletedLegacy = isPlainObject(d.__completedOnceByMode)
       ? d.__completedOnceByMode
       : {};
 
@@ -312,14 +344,20 @@ export function createStorage(cfg) {
       version: 3,
       mode,
       cats,
+      catsByMode,
       itemsByMode,
       modes,
+      completedOnceByMode: {},
       __completedOnceByMode: {}
     };
 
     for (const mk of allModeKeys) {
-      out.__completedOnceByMode[mk] = !!rawCompleted[mk];
+      const v = !!(rawCompletedModern[mk] ?? rawCompletedLegacy[mk]);
+      out.completedOnceByMode[mk] = v;
+      out.__completedOnceByMode[mk] = v;
+
       out.itemsByMode[mk] = normalizeItemsCats(out.itemsByMode[mk], catIndex);
+      out.catsByMode[mk] = repairCatsArray(out.catsByMode[mk]);
     }
 
     return finalizeData(out, mode);
@@ -334,36 +372,56 @@ export function createStorage(cfg) {
       version: 3,
       mode,
       cats,
+      catsByMode: {},
       itemsByMode: {},
       modes: {},
+      completedOnceByMode: {},
       __completedOnceByMode: {}
     };
 
     const allModeKeys = uniq([
       mode,
       ...(isPlainObject(data?.itemsByMode) ? Object.keys(data.itemsByMode).map(slugifyModeKey) : []),
+      ...(isPlainObject(data?.catsByMode) ? Object.keys(data.catsByMode).map(slugifyModeKey) : []),
       ...(isPlainObject(data?.modes) ? Object.keys(data.modes).map(slugifyModeKey) : [])
     ]);
 
     if (!allModeKeys.length) allModeKeys.push(mode);
 
     for (const mk of allModeKeys) {
+      const rawCats = Array.isArray(data?.catsByMode?.[mk])
+        ? data.catsByMode[mk]
+        : cats;
+
+      const fixedCats = repairCatsArray(rawCats);
+      const localCatIndex = createCatIndex(fixedCats);
+
       const rawItems = Array.isArray(data?.itemsByMode?.[mk]) ? data.itemsByMode[mk] : [];
       const fixedItems = ensureUniqueItemIds(
         normalizeItemsCats(
-          repairItemsArray(rawItems, cats),
-          catIndex
+          repairItemsArray(rawItems, fixedCats),
+          localCatIndex
         )
       );
 
+      out.catsByMode[mk] = fixedCats;
       out.itemsByMode[mk] = fixedItems;
       out.modes[mk] = repairModeMeta(mk, data?.modes?.[mk] || {});
-      out.__completedOnceByMode[mk] = !!data?.__completedOnceByMode?.[mk];
+      const completed = !!(
+        data?.completedOnceByMode?.[mk] ??
+        data?.__completedOnceByMode?.[mk]
+      );
+      out.completedOnceByMode[mk] = completed;
+      out.__completedOnceByMode[mk] = completed;
     }
 
     if (!out.itemsByMode[mode]) out.itemsByMode[mode] = [];
+    if (!out.catsByMode[mode]) out.catsByMode[mode] = cats;
     if (!out.modes[mode]) out.modes[mode] = repairModeMeta(mode, {});
+    if (!(mode in out.completedOnceByMode)) out.completedOnceByMode[mode] = false;
     if (!(mode in out.__completedOnceByMode)) out.__completedOnceByMode[mode] = false;
+
+    out.itemsByMode[mode] = normalizeItemsCats(out.itemsByMode[mode], catIndex);
 
     return out;
   }
@@ -398,7 +456,7 @@ export function createStorage(cfg) {
       out.push(makeCompatCat({
         id: 'otros',
         name: 'Otros',
-        emoji: null
+        emoji: '✨'
       }));
     }
 
@@ -406,7 +464,7 @@ export function createStorage(cfg) {
       out.push(makeCompatCat({
         id: 'otros',
         name: 'Otros',
-        emoji: null
+        emoji: '✨'
       }));
     }
 
@@ -485,14 +543,12 @@ export function createStorage(cfg) {
       name: ensureString(it?.name || it?.title || 'Sin nombre', 120) || 'Sin nombre',
       emoji: it?.emoji ? normalizeEmoji(it.emoji) : null,
       done: !!it?.done,
-      modes: rawModes,
+      modes: rawModes?.length ? rawModes : null,
       originId: it?.originId ? ensureString(it.originId, 140) : null
     };
 
-    // primera pasada: slug básico
     fixed.cat = slugifyCatKey(fixed.cat) || 'otros';
 
-    // segunda pasada: si hay cats, compatibiliza contra IDs reales
     if (Array.isArray(cats) && cats.length) {
       const catIndex = createCatIndex(cats);
       fixed.cat = resolveExistingCatId(fixed.cat, catIndex);
@@ -503,12 +559,20 @@ export function createStorage(cfg) {
 
   function repairModeMeta(key, meta) {
     const fixedKey = slugifyModeKey(key || meta?.key || meta?.name || 'salida');
-    const label = ensureString(meta?.label || meta?.name || labelFromMode(fixedKey), 60) || labelFromMode(fixedKey);
+    const cleanName = ensureString(
+      meta?.name || stripLeadingEmoji(meta?.label) || labelFromMode(fixedKey),
+      60
+    ) || labelFromMode(fixedKey);
+
+    const cleanLabel = ensureString(
+      meta?.label || `🧳 ${cleanName}`,
+      60
+    ) || `🧳 ${cleanName}`;
 
     return {
       key: fixedKey,
-      name: label,
-      label,
+      name: cleanName,
+      label: cleanLabel,
       icon: meta?.icon ? normalizeEmoji(meta.icon) : null,
       createdAt: ensureString(meta?.createdAt || '', 40) || nowIso(),
       updatedAt: ensureString(meta?.updatedAt || '', 40) || nowIso()
@@ -615,11 +679,13 @@ export function createStorage(cfg) {
     return {
       version: 3,
       mode,
-      cats: [makeCompatCat({ id: 'otros', name: 'Otros', emoji: null })],
+      cats: [makeCompatCat({ id: 'otros', name: 'Otros', emoji: '✨' })],
+      catsByMode: { [mode]: [makeCompatCat({ id: 'otros', name: 'Otros', emoji: '✨' })] },
       itemsByMode: { [mode]: [] },
       modes: {
-        [mode]: repairModeMeta(mode, { name: labelFromMode(mode), label: labelFromMode(mode) })
+        [mode]: repairModeMeta(mode, { name: labelFromMode(mode), label: `🧳 ${labelFromMode(mode)}` })
       },
+      completedOnceByMode: { [mode]: false },
       __completedOnceByMode: { [mode]: false }
     };
   }
@@ -779,6 +845,12 @@ function normalizeEmoji(v) {
 function nowIso() {
   try { return new Date().toISOString(); }
   catch { return ''; }
+}
+
+function stripLeadingEmoji(text = '') {
+  return String(text)
+    .replace(/^[^\p{L}\p{N}]+/u, '')
+    .trim();
 }
 
 function labelFromMode(mode) {

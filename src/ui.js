@@ -1,5 +1,5 @@
 /* =============================================================================
-  /src/ui.js — UI glue (modals, buttons, mobile-only, focus) — PRO v6.0
+  /src/ui.js — UI glue (modals, buttons, mobile-only, focus) — PRO v7.0
   - ✅ Mobile-only enforcement (soft) + DEV bypass
   - ✅ Modal manager robusto:
       - focus restore por modal
@@ -18,6 +18,9 @@
       - handles missing els gracefully
       - avoids duplicate listeners in repeated init
       - better focusables filtering
+  - ✅ Better coexistence with app.js:
+      - no pelea innecesaria por listas/modos
+      - no duplicación torpe de flujos
 ============================================================================= */
 
 'use strict';
@@ -70,8 +73,9 @@ export function initUI(cfg) {
   bindModeEditor({ els, store, actions, fx, modal, onAfterStateChange });
 
   store?.subscribe?.((prev, next) => {
-    if (prev?.settings !== next?.settings) {
+    if (prev?.settings !== next?.settings || prev?.data !== next?.data) {
       syncSettingsInputs(els, next);
+      syncModeEditorSnapshot({ els, store });
     }
   });
 
@@ -110,7 +114,10 @@ function createPublicAPI({ els, store, fx, actions, onAfterStateChange, modal, d
 
     openEditById: (id) => openEditById({ els, store, fx, modal, id }),
 
-    sync: () => syncSettingsInputs(els, store?.getState?.())
+    sync: () => {
+      syncSettingsInputs(els, store?.getState?.());
+      syncModeEditorSnapshot({ els, store });
+    }
   };
 }
 
@@ -441,6 +448,9 @@ function prepareModalOpen(name, els, overlay) {
   if (name === 'add') {
     if (els?.newName) els.newName.value = '';
     if (els?.newEmoji) els.newEmoji.value = '';
+    if (els?.newCat && selectHasValue(els.newCat, 'otros') && !els.newCat.value) {
+      els.newCat.value = 'otros';
+    }
     if (els?.newModeTarget && els?.tripMode) {
       const currentMode = String(els.tripMode.value || 'salida');
       if (selectHasValue(els.newModeTarget, currentMode)) {
@@ -478,7 +488,9 @@ function syncSettingsInputs(els, state) {
   if (!els) return;
   const s = state?.settings || {};
 
-  if (els.tripMode) els.tripMode.value = s.tripMode || 'salida';
+  if (els.tripMode && selectHasValue(els.tripMode, s.tripMode || 'salida')) {
+    els.tripMode.value = s.tripMode || 'salida';
+  }
 
   const motion = !!s.motion;
   const sound = !!s.sound;
@@ -501,6 +513,10 @@ function syncSettingsInputs(els, state) {
   if (els.newModeTarget && els.tripMode && selectHasValue(els.newModeTarget, s.tripMode || 'salida')) {
     els.newModeTarget.value = s.tripMode || 'salida';
   }
+
+  if (els.dupMode && els.tripMode && selectHasValue(els.dupMode, s.tripMode || 'salida') && !els.dupMode.value) {
+    els.dupMode.value = s.tripMode || 'salida';
+  }
 }
 
 function bindSettingsInputs({ els, store, actions, fx, onAfterStateChange }) {
@@ -516,7 +532,7 @@ function bindSettingsInputs({ els, store, actions, fx, onAfterStateChange }) {
     if (typeof actions?.setMotion === 'function') {
       actions.setMotion(checked);
     } else {
-      store?.setState?.((prev) => ({
+      safeSetState(store, (prev) => ({
         ...prev,
         settings: { ...(prev.settings || {}), motion: checked }
       }));
@@ -531,7 +547,7 @@ function bindSettingsInputs({ els, store, actions, fx, onAfterStateChange }) {
     if (typeof actions?.setSound === 'function') {
       actions.setSound(checked);
     } else {
-      store?.setState?.((prev) => ({
+      safeSetState(store, (prev) => ({
         ...prev,
         settings: { ...(prev.settings || {}), sound: checked }
       }));
@@ -569,6 +585,7 @@ function bindAddModal({ els, actions, fx, modal, onAfterStateChange, store }) {
 
     if (!res?.ok) {
       shakeIfMotion({ store, overlay: els.addOverlay });
+      safe(() => fx?.haptic?.(14));
       busy = false;
       return;
     }
@@ -576,7 +593,7 @@ function bindAddModal({ els, actions, fx, modal, onAfterStateChange, store }) {
     modal?.close?.('add');
     onAfterStateChange?.();
 
-    setTimeout(() => { busy = false; }, 90);
+    setTimeout(() => { busy = false; }, 120);
   };
 
   bindClick(els.btnCreate, () => {
@@ -620,13 +637,14 @@ function bindEditModal({ els, actions, fx, modal, onAfterStateChange, store }) {
 
     if (!res?.ok) {
       shakeIfMotion({ store, overlay: els.editOverlay });
+      safe(() => fx?.haptic?.(14));
       busySave = false;
       return;
     }
 
     modal?.close?.('edit');
     onAfterStateChange?.();
-    setTimeout(() => { busySave = false; }, 90);
+    setTimeout(() => { busySave = false; }, 120);
   };
 
   const doAddToMode = () => {
@@ -639,10 +657,19 @@ function bindEditModal({ els, actions, fx, modal, onAfterStateChange, store }) {
       return;
     }
 
+    const currentMode = getCurrentMode(store?.getState?.() || {});
     const toMode = String(els.dupMode?.value || '').trim();
+
     if (!toMode) {
       safe(() => fx?.toast?.('Escoge una lista 🙃'));
       safe(() => fx?.haptic?.(14));
+      busyAdd = false;
+      return;
+    }
+
+    if (toMode === currentMode) {
+      safe(() => fx?.toast?.('Ese item ya está en esta lista 😌'));
+      safe(() => fx?.haptic?.(8));
       busyAdd = false;
       return;
     }
@@ -654,12 +681,17 @@ function bindEditModal({ els, actions, fx, modal, onAfterStateChange, store }) {
     } else if (typeof actions?.addItemToMode === 'function') {
       res = actions.addItemToMode(id, toMode);
     } else {
-      res = { ok: false };
+      res = { ok: false, reason: 'MISSING_HANDLER' };
     }
 
     if (!res?.ok) {
-      safe(() => fx?.toast?.('No se pudo agregar a esa lista 🙄'));
-      safe(() => fx?.haptic?.(14));
+      if (res?.reason === 'ALREADY_EXISTS') {
+        safe(() => fx?.toast?.('Ese item ya existe en esa lista 😌'));
+        safe(() => fx?.haptic?.(8));
+      } else {
+        safe(() => fx?.toast?.('No se pudo agregar a esa lista 🙄'));
+        safe(() => fx?.haptic?.(14));
+      }
       busyAdd = false;
       return;
     }
@@ -667,7 +699,7 @@ function bindEditModal({ els, actions, fx, modal, onAfterStateChange, store }) {
     safe(() => fx?.toast?.('Agregado a la otra lista ✅'));
     safe(() => fx?.haptic?.(10));
     onAfterStateChange?.();
-    setTimeout(() => { busyAdd = false; }, 90);
+    setTimeout(() => { busyAdd = false; }, 120);
   };
 
   bindClick(els.btnSaveEdit, () => {
@@ -720,30 +752,7 @@ function bindModeEditor({ els, store, actions, fx, modal, onAfterStateChange }) 
   }, '__modeEditorDelete__');
 
   bindChange(resolveModeEditorSelect(els), () => {
-    const overlay = resolveModeEditorOverlay(els);
-    const state = store?.getState?.() || {};
-    const selectEl = resolveModeEditorSelect(els);
-    const nameInput = resolveModeEditorNameInput(els);
-    const countEl = resolveModeItemsCountEl(els);
-
-    const modeKey = String(selectEl?.value || getCurrentMode(state) || '').trim();
-
-    if (overlay?.dataset) overlay.dataset.modeKey = modeKey;
-
-    const modeData = getModeData(state, modeKey);
-
-    if (nameInput) {
-      nameInput.value = String(
-        stripLeadingEmoji(modeData?.label || modeData?.name || modeKey || '')
-      );
-    }
-
-    if (countEl) {
-      const count = Array.isArray(modeData?.items)
-        ? modeData.items.length
-        : getItemsForMode(state, modeKey).length;
-      countEl.textContent = String(count);
-    }
+    syncModeEditorSnapshot({ els, store, preferSelected: true });
   }, '__modeEditorSelectChange__');
 
   bindEnterEsc(
@@ -769,37 +778,21 @@ function openModeEditor({ els, store, actions, fx, modal, onAfterStateChange, re
 
   const overlay = resolveModeEditorOverlay(els);
   if (overlay && modal) {
-    const modeData = getModeData(state, currentMode);
-    const nameInput = resolveModeEditorNameInput(els);
     const selectEl = resolveModeEditorSelect(els);
-    const countEl = resolveModeItemsCountEl(els);
 
     if (overlay.dataset) {
       overlay.dataset.modeKey = currentMode;
     }
 
-    if (nameInput) {
-      nameInput.value = String(
-        stripLeadingEmoji(modeData?.label || modeData?.name || currentMode || '')
-      );
+    if (selectEl && selectHasValue(selectEl, currentMode)) {
+      selectEl.value = String(currentMode || '');
     }
 
-    if (selectEl) {
-      if (selectHasValue(selectEl, currentMode)) {
-        selectEl.value = String(currentMode || '');
-      }
-    }
-
-    if (countEl) {
-      const count = Array.isArray(modeData?.items)
-        ? modeData.items.length
-        : getItemsForMode(state, currentMode).length;
-      countEl.textContent = String(count);
-    }
+    syncModeEditorSnapshot({ els, store, modeKey: currentMode });
 
     modal.open('modeEditor', {
       returnFocusEl: returnFocusEl || document.activeElement,
-      focusEl: nameInput || selectEl
+      focusEl: resolveModeEditorNameInput(els) || selectEl
     });
     return;
   }
@@ -842,7 +835,7 @@ function saveModeEditor({ els, store, actions, fx, modal, onAfterStateChange }) 
   } else if (typeof actions?.renameMode === 'function') {
     res = actions.renameMode(modeKey, newName);
   } else {
-    store?.setState?.((prev) => {
+    safeSetState(store, (prev) => {
       const next = { ...(prev || {}) };
       const data = { ...(next.data || {}) };
       const modes = { ...(data.modes || {}) };
@@ -908,6 +901,46 @@ function deleteModeEditor({ els, store, actions, fx, modal, onAfterStateChange }
   onAfterStateChange?.();
 }
 
+function syncModeEditorSnapshot({ els, store, modeKey = '', preferSelected = false } = {}) {
+  const state = store?.getState?.() || {};
+  const overlay = resolveModeEditorOverlay(els);
+  const selectEl = resolveModeEditorSelect(els);
+  const nameInput = resolveModeEditorNameInput(els);
+  const countEl = resolveModeItemsCountEl(els);
+
+  const resolvedModeKey = String(
+    modeKey ||
+    (preferSelected ? selectEl?.value : '') ||
+    overlay?.dataset?.modeKey ||
+    selectEl?.value ||
+    getCurrentMode(state) ||
+    ''
+  ).trim();
+
+  if (!resolvedModeKey) return;
+
+  if (overlay?.dataset) overlay.dataset.modeKey = resolvedModeKey;
+
+  const modeData = getModeData(state, resolvedModeKey);
+
+  if (nameInput && document.activeElement !== nameInput) {
+    nameInput.value = String(
+      stripLeadingEmoji(modeData?.label || modeData?.name || resolvedModeKey || '')
+    );
+  }
+
+  if (selectEl && selectHasValue(selectEl, resolvedModeKey)) {
+    selectEl.value = resolvedModeKey;
+  }
+
+  if (countEl) {
+    const count = Array.isArray(modeData?.items)
+      ? modeData.items.length
+      : getItemsForMode(state, resolvedModeKey).length;
+    countEl.textContent = String(count);
+  }
+}
+
 /* =========================
    Edit convenience
 ========================= */
@@ -934,7 +967,9 @@ export function openEditById({ els, store, fx, modal, id }) {
 
   if (els.editName) els.editName.value = String(it.name || '');
   if (els.editEmoji) els.editEmoji.value = String(it.emoji || '');
-  if (els.editCat) els.editCat.value = String(it.cat || 'otros');
+  if (els.editCat && selectHasValue(els.editCat, String(it.cat || 'otros'))) {
+    els.editCat.value = String(it.cat || 'otros');
+  }
 
   if (els.dupMode) {
     const currentMode = String(mode || 'salida');
@@ -1177,6 +1212,7 @@ function getFocusables(root) {
   )).filter(el => {
     if (!isElementVisible(el)) return false;
     if (el.getAttribute('aria-hidden') === 'true') return false;
+    if (el.closest?.('[aria-hidden="true"]')) return false;
     return true;
   });
 }
@@ -1207,6 +1243,18 @@ function bindOnce(target, key, type, handler, options) {
 
   target.addEventListener(type, handler, options);
   target.__uiBoundHandlers.set(mapKey, handler);
+}
+
+function safeSetState(store, updater) {
+  if (!store?.setState || typeof updater !== 'function') return;
+
+  try {
+    const prev = store.getState?.();
+    const next = updater(prev);
+    if (next && typeof next === 'object') {
+      store.setState(next);
+    }
+  } catch {}
 }
 
 function safe(fn) {

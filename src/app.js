@@ -1,5 +1,5 @@
 /* =============================================================================
-  /src/app.js — Maleta · Checklist — App Orchestrator — IMPROVED v6
+  /src/app.js — Maleta · Checklist — App Orchestrator — IMPROVED v8
   - ✅ Boots store + storage
   - ✅ Wires actions + render + UI + gestures + FX
   - ✅ Keeps mode theme (data-mode) synced
@@ -10,6 +10,9 @@
   - ✅ Modes manager cleaned: save/rename/create/delete modes
   - ✅ Safer mode switching + persistence flush on unload
   - ✅ Fallbacks for legacy data shapes and missing action handlers
+  - ✅ Guards against duplicate bindings / boot duplication
+  - ✅ More defensive rendering and modal sync
+  - ✅ FIX: boot guard moved below constants to avoid TDZ on STORAGE_KEY
 ============================================================================= */
 
 'use strict';
@@ -174,7 +177,8 @@ function newPreset(mode) {
       emoji: x.emoji || null,
       done: false
     })),
-    __completedOnce: false
+    completedOnceByMode: { [mode]: false },
+    __completedOnceByMode: { [mode]: false }
   };
 }
 
@@ -243,10 +247,17 @@ const els = {
 };
 
 /* =========================
-   BOOT
+   SINGLE BOOT GUARD
 ========================= */
 
-boot();
+if (!window.__MALETA_APP_BOOTED__) {
+  window.__MALETA_APP_BOOTED__ = true;
+  boot();
+}
+
+/* =========================
+   BOOT
+========================= */
 
 function boot() {
   const storage = createStorage({
@@ -309,7 +320,6 @@ function boot() {
 
   ensureDataHydrated();
   ensureValidSelectedMode();
-
   syncModeTheme(store.getState().settings.tripMode);
 
   /* =========================
@@ -478,26 +488,24 @@ function boot() {
      MODE SWITCH
   ========================= */
 
-  if (els.tripMode) {
-    els.tripMode.addEventListener('change', (e) => {
-      const mode = String(e.target.value || 'salida');
-      changeMode(mode);
-    });
-  }
+  bindOnce(els.tripMode, 'change', (e) => {
+    const mode = String(e.target.value || 'salida');
+    changeMode(mode);
+  }, 'trip-mode-change');
 
   /* =========================
      LIFECYCLE / SAFETY
   ========================= */
 
-  window.addEventListener('beforeunload', () => {
+  bindOnce(window, 'beforeunload', () => {
     try { flushAll?.(); } catch {}
-  });
+  }, 'beforeunload-flush');
 
-  document.addEventListener('visibilitychange', () => {
+  bindOnce(document, 'visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
       try { flushAll?.(); } catch {}
     }
-  });
+  }, 'visibilitychange-flush');
 
   /* =========================
      FIRST PAINT
@@ -509,20 +517,22 @@ function boot() {
      HELPERS
   ========================= */
 
-  function renderAll(st = store.getState()) {
+  function renderAll() {
     ensureDataHydrated();
     ensureValidSelectedMode();
 
-    syncModeTheme(st.settings.tripMode);
-    syncModeSelect(st.settings.tripMode);
+    const fresh = store.getState();
 
-    renderHeader(st);
-    renderModeSelects(st);
-    renderTabs(st, els.tabRow);
-    renderCategorySelects(st);
-    renderList(st, els.list);
-    runProgress(st);
-    renderModeManager(st);
+    syncModeTheme(fresh.settings.tripMode);
+    syncModeSelect(fresh.settings.tripMode);
+
+    renderHeader(fresh);
+    renderModeSelects(fresh);
+    renderTabs(fresh, els.tabRow);
+    renderCategorySelects(fresh);
+    renderList(fresh, els.list);
+    runProgress(fresh);
+    renderModeManager(fresh);
   }
 
   function renderHeader(st) {
@@ -542,6 +552,14 @@ function boot() {
   function renderCategorySelects(st = store.getState()) {
     renderAddCategories(st, els.newCat);
     renderAddCategories(st, els.editCat);
+
+    const currentCat = normalizeCatId(els.editCat?.value || 'otros');
+    const cats = getCatsForCurrentMode();
+    const exists = cats.some(c => normalizeCatId(c?.id || c?.key || '') === currentCat);
+
+    if (els.editCat && !exists && cats.length) {
+      els.editCat.value = normalizeCatId(cats[0]?.id || 'otros');
+    }
   }
 
   function renderModeSelects(st = store.getState()) {
@@ -837,6 +855,11 @@ function boot() {
       changed = true;
     }
 
+    if (!nextData.__completedOnceByMode || typeof nextData.__completedOnceByMode !== 'object' || Array.isArray(nextData.__completedOnceByMode)) {
+      nextData.__completedOnceByMode = { ...(nextData.completedOnceByMode || {}) };
+      changed = true;
+    }
+
     const legacyMode = normalizeModeKey(st?.settings?.tripMode || nextData.mode || 'salida');
 
     if (Array.isArray(nextData.items) || Array.isArray(nextData.cats)) {
@@ -855,7 +878,9 @@ function boot() {
       }
 
       if (!nextData.modes[legacyMode]) {
-        nextData.modes[legacyMode] = { label: (presetFor(legacyMode)?.label) || `🧳 ${prettyModeLabel(legacyMode)}` };
+        nextData.modes[legacyMode] = {
+          label: (presetFor(legacyMode)?.label) || `🧳 ${prettyModeLabel(legacyMode)}`
+        };
         changed = true;
       }
     }
@@ -890,6 +915,11 @@ function boot() {
 
       if (typeof nextData.completedOnceByMode[key] !== 'boolean') {
         nextData.completedOnceByMode[key] = false;
+        changed = true;
+      }
+
+      if (typeof nextData.__completedOnceByMode[key] !== 'boolean') {
+        nextData.__completedOnceByMode[key] = !!nextData.completedOnceByMode[key];
         changed = true;
       }
     }
@@ -928,6 +958,9 @@ function boot() {
     if (!data.itemsByMode || typeof data.itemsByMode !== 'object' || Array.isArray(data.itemsByMode)) data.itemsByMode = {};
     if (!data.catsByMode || typeof data.catsByMode !== 'object' || Array.isArray(data.catsByMode)) data.catsByMode = {};
     if (!data.completedOnceByMode || typeof data.completedOnceByMode !== 'object' || Array.isArray(data.completedOnceByMode)) data.completedOnceByMode = {};
+    if (!data.__completedOnceByMode || typeof data.__completedOnceByMode !== 'object' || Array.isArray(data.__completedOnceByMode)) {
+      data.__completedOnceByMode = { ...(data.completedOnceByMode || {}) };
+    }
   }
 
   function ensureModeInitialized(data, mode, options = {}) {
@@ -965,6 +998,10 @@ function boot() {
 
     if (typeof data.completedOnceByMode[key] !== 'boolean') {
       data.completedOnceByMode[key] = false;
+    }
+
+    if (typeof data.__completedOnceByMode[key] !== 'boolean') {
+      data.__completedOnceByMode[key] = !!data.completedOnceByMode[key];
     }
 
     return key;
@@ -1020,6 +1057,14 @@ function boot() {
     }
   }
 
+  function bindOnce(target, eventName, handler, bindingKey = '') {
+    if (!target || !eventName || typeof handler !== 'function') return;
+    const key = `__bound_${eventName}_${bindingKey || 'default'}`;
+    if (target[key]) return;
+    target[key] = true;
+    target.addEventListener(eventName, handler);
+  }
+
   /* =========================
      ADD MODAL SUPPORT
   ========================= */
@@ -1033,26 +1078,21 @@ function boot() {
       }
     };
 
-    els.btnAdd?.addEventListener('click', syncAddTarget);
-    els.btnCloseAdd?.addEventListener('click', () => { /* noop, solo evita dejar esto vacío mentalmente */ });
+    bindOnce(els.btnAdd, 'click', syncAddTarget, 'btn-add-sync-target');
 
-    els.addOverlay?.addEventListener('click', (e) => {
+    bindOnce(els.addOverlay, 'click', (e) => {
       if (e.target === els.addOverlay) {
         syncAddTarget();
       }
-    });
+    }, 'overlay-sync-target');
 
-    // Intercepta solo si ui.js todavía no maneja targetMode.
-    els.btnCreate?.addEventListener('click', () => {
+    bindOnce(els.btnCreate, 'click', () => {
       if (!els.newModeTarget) return;
       const targetMode = normalizeModeKey(els.newModeTarget.value || getCurrentMode());
-
-      // Si ui.js ya usa targetMode, esto no hace falta. Pero si no, al menos dejamos
-      // sincronizado el selector para que actions/createItem pueda leerlo si ui.js lo reenvía.
       if (els.newModeTarget.value !== targetMode) {
         els.newModeTarget.value = targetMode;
       }
-    }, { capture: true });
+    }, 'btn-create-normalize-target');
   }
 
   /* =========================
@@ -1098,19 +1138,19 @@ function boot() {
   }
 
   function bindEditModal() {
-    els.btnCloseEdit?.addEventListener('click', () => closeEdit());
+    bindOnce(els.btnCloseEdit, 'click', () => closeEdit(), 'close-edit-btn');
 
-    els.editOverlay?.addEventListener('click', (e) => {
+    bindOnce(els.editOverlay, 'click', (e) => {
       if (e.target === els.editOverlay) closeEdit();
-    });
+    }, 'edit-overlay-close');
 
-    window.addEventListener('keydown', (e) => {
+    bindOnce(window, 'keydown', (e) => {
       if (e.key !== 'Escape') return;
       if (els.editOverlay?.classList.contains('show')) closeEdit();
       if (els.modesOverlay?.classList.contains('show')) closeModesManager();
-    });
+    }, 'escape-overlays');
 
-    els.btnSaveEdit?.addEventListener('click', () => {
+    bindOnce(els.btnSaveEdit, 'click', () => {
       const id = String(els.editOverlay?.dataset?.editingId || '');
       if (!id) return;
 
@@ -1130,9 +1170,9 @@ function boot() {
         fx.toast?.('No se pudo guardar. Revisa el nombre 🙃');
         fx.haptic?.(14);
       }
-    });
+    }, 'save-edit');
 
-    els.btnAddToMode?.addEventListener('click', () => {
+    bindOnce(els.btnAddToMode, 'click', () => {
       const id = String(els.editOverlay?.dataset?.editingId || '');
       const targetMode = normalizeModeKey(els.dupMode?.value || '');
 
@@ -1160,18 +1200,21 @@ function boot() {
         fx.toast?.('Agregado a la otra lista ✅');
         fx.haptic?.(10);
         scheduleRender('all');
+      } else if (res?.reason === 'ALREADY_EXISTS') {
+        fx.toast?.('Ese item ya existe en esa lista 😌');
+        fx.haptic?.(8);
       } else {
         fx.toast?.('No se pudo agregar a esa lista 🙃');
         fx.haptic?.(14);
       }
-    });
+    }, 'add-to-mode');
 
-    els.editName?.addEventListener('keydown', (e) => {
+    bindOnce(els.editName, 'keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
         els.btnSaveEdit?.click();
       }
-    });
+    }, 'edit-name-enter');
   }
 
   function fallbackAddItemToMode(id, targetMode) {
@@ -1213,11 +1256,12 @@ function boot() {
 
   function openModesManager() {
     renderModeSelects(store.getState());
-    renderModeManager(store.getState());
 
     if (els.modeEditorSelect) {
       els.modeEditorSelect.value = getCurrentMode();
     }
+
+    renderModeManager(store.getState());
 
     if (ui?.closeSettings) {
       try { ui.closeSettings(); } catch {}
@@ -1243,11 +1287,14 @@ function boot() {
   }
 
   function bindModesManager() {
-    els.btnManageModes?.addEventListener('click', () => openModesManager());
-    els.btnCloseModes?.addEventListener('click', () => closeModesManager());
+    bindOnce(els.btnManageModes, 'click', () => openModesManager(), 'open-modes-manager');
+    bindOnce(els.btnCloseModes, 'click', () => closeModesManager(), 'close-modes-manager');
 
-    els.modesOverlay?.addEventListener('click', (e) => {
-      if (e.target === els.modesOverlay) closeModesManager();
+    bindOnce(els.modesOverlay, 'click', (e) => {
+      if (e.target === els.modesOverlay) {
+        closeModesManager();
+        return;
+      }
 
       const pickBtn = e.target?.closest?.('[data-mode-pick]');
       if (pickBtn) {
@@ -1256,20 +1303,20 @@ function boot() {
         if (els.modeEditorSelect) els.modeEditorSelect.value = key;
         scheduleRender('modeManager');
       }
-    });
+    }, 'modes-overlay-click');
 
-    els.modeEditorSelect?.addEventListener('change', () => {
+    bindOnce(els.modeEditorSelect, 'change', () => {
       scheduleRender('modeManager');
-    });
+    }, 'mode-editor-select-change');
 
-    els.newModeName?.addEventListener('keydown', (e) => {
+    bindOnce(els.newModeName, 'keydown', (e) => {
       if (e.key === 'Enter') {
         e.preventDefault();
         els.btnCreateMode?.click();
       }
-    });
+    }, 'new-mode-name-enter');
 
-    els.btnCreateMode?.addEventListener('click', () => {
+    bindOnce(els.btnCreateMode, 'click', () => {
       const baseMode = normalizeModeKey(els.modeEditorSelect?.value || getCurrentMode());
       const typedLabelRaw = String(els.newModeName?.value || '').trim();
 
@@ -1342,6 +1389,7 @@ function boot() {
         }
 
         data.completedOnceByMode[nextKey] = false;
+        data.__completedOnceByMode[nextKey] = false;
       });
 
       if (els.modeEditorSelect) els.modeEditorSelect.value = nextKey;
@@ -1349,9 +1397,9 @@ function boot() {
       fx.toast?.('Lista creada ✅');
       fx.haptic?.(10);
       scheduleRender('all');
-    });
+    }, 'create-mode');
 
-    els.btnDeleteMode?.addEventListener('click', () => {
+    bindOnce(els.btnDeleteMode, 'click', () => {
       const key = normalizeModeKey(els.modeEditorSelect?.value || getCurrentMode());
       const modes = getModesEntries(store.getState());
 
@@ -1368,6 +1416,7 @@ function boot() {
         delete data.itemsByMode[key];
         delete data.catsByMode[key];
         delete data.completedOnceByMode[key];
+        delete data.__completedOnceByMode[key];
       });
 
       const st = store.getState();
@@ -1391,6 +1440,6 @@ function boot() {
       fx.toast?.('Lista eliminada 🗑️');
       fx.haptic?.(10);
       scheduleRender('all');
-    });
+    }, 'delete-mode');
   }
 }
