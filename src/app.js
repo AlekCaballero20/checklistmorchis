@@ -1,20 +1,3 @@
-/* =============================================================================
-  /src/app.js — Maleta · Checklist — App Orchestrator — IMPROVED v8
-  - ✅ Boots store + storage
-  - ✅ Wires actions + render + UI + gestures + FX
-  - ✅ Keeps mode theme (data-mode) synced
-  - ✅ Completion logic via actions.onCompletedOnce (mode-aware)
-  - ✅ Edit modal plumbing aligned with new HTML
-  - ✅ Supports "Lista destino" on Add modal
-  - ✅ Supports "Agregar también a otra lista" on Edit modal
-  - ✅ Modes manager cleaned: save/rename/create/delete modes
-  - ✅ Safer mode switching + persistence flush on unload
-  - ✅ Fallbacks for legacy data shapes and missing action handlers
-  - ✅ Guards against duplicate bindings / boot duplication
-  - ✅ More defensive rendering and modal sync
-  - ✅ FIX: boot guard moved below constants to avoid TDZ on STORAGE_KEY
-============================================================================= */
-
 'use strict';
 
 import { createStore } from './state.js';
@@ -31,160 +14,27 @@ import {
 
 import { initUI } from './ui.js';
 import { createFX } from './fx.js';
-import { initGestures } from './gestures.js';
 
-/* =========================
-   CONFIG / CONSTANTS
-========================= */
+/* ============================================================================
+  CONFIG
+============================================================================ */
 
-const STORAGE_KEY = 'maleta_pwa_v4_data';
-const SETTINGS_KEY = 'maleta_pwa_v4_settings';
+const STORAGE_KEY = 'checklist_lists_data';
+const SETTINGS_KEY = 'checklist_lists_settings';
 
 const DEFAULT_SETTINGS = {
-  tripMode: 'salida',
   motion: true,
   sound: true,
   streak: 0
 };
 
-const PRESETS = {
-  salida: {
-    label: '🧳 Salida',
-    cats: [
-      { id: 'tech',  name: 'Tecnología', emoji: '🔌' },
-      { id: 'docs',  name: 'Documentos', emoji: '🪪' },
-      { id: 'ropa',  name: 'Ropa',       emoji: '👕' },
-      { id: 'hig',   name: 'Higiene',    emoji: '🧼' },
-      { id: 'otros', name: 'Otros',      emoji: '✨' }
-    ],
-    items: [
-      { cat: 'tech',  name: 'Cargador del celular', emoji: '🔌' },
-      { cat: 'tech',  name: 'Power bank',           emoji: '🔋' },
-      { cat: 'tech',  name: 'Audífonos',            emoji: '🎧' },
-      { cat: 'docs',  name: 'Cédula / documento',   emoji: '🪪' },
-      { cat: 'docs',  name: 'Tarjeta / efectivo',   emoji: '💳' },
-      { cat: 'ropa',  name: 'Chaqueta',             emoji: '🧥' },
-      { cat: 'hig',   name: 'Desodorante',          emoji: '🧴' },
-      { cat: 'hig',   name: 'Cepillo + crema',      emoji: '🪥' },
-      { cat: 'otros', name: 'Llaves',               emoji: '🔑' }
-    ]
-  },
-
-  viaje: {
-    label: '✈️ Viaje',
-    cats: [
-      { id: 'tech',  name: 'Tecnología', emoji: '🔌' },
-      { id: 'docs',  name: 'Documentos', emoji: '🧾' },
-      { id: 'salud', name: 'Salud',      emoji: '💊' },
-      { id: 'ropa',  name: 'Ropa',       emoji: '🧳' },
-      { id: 'otros', name: 'Otros',      emoji: '✨' }
-    ],
-    items: [
-      { cat: 'docs',  name: 'Pasaporte / ID',      emoji: '🛂' },
-      { cat: 'docs',  name: 'Tiquetes / reservas', emoji: '🎫' },
-      { cat: 'tech',  name: 'Cargadores (todos)',  emoji: '🔌' },
-      { cat: 'tech',  name: 'Adaptador',           emoji: '🔁' },
-      { cat: 'salud', name: 'Medicinas',           emoji: '💊' },
-      { cat: 'ropa',  name: 'Medias extra',        emoji: '🧦' }
-    ]
-  },
-
-  gira: {
-    label: '🎭 Gira',
-    cats: [
-      { id: 'tech',  name: 'Tech',  emoji: '🔌' },
-      { id: 'audio', name: 'Audio', emoji: '🎛️' },
-      { id: 'ropa',  name: 'Ropa',  emoji: '👕' },
-      { id: 'docs',  name: 'Docs',  emoji: '🪪' },
-      { id: 'otros', name: 'Otros', emoji: '✨' }
-    ],
-    items: [
-      { cat: 'audio', name: 'Micrófono / adaptadores', emoji: '🎤' },
-      { cat: 'audio', name: 'Interfaces / cables',     emoji: '🧵' },
-      { cat: 'tech',  name: 'Cargador laptop',         emoji: '💻' },
-      { cat: 'tech',  name: 'USB / backup',            emoji: '💾' },
-      { cat: 'ropa',  name: 'Outfit / cambio',         emoji: '👕' },
-      { cat: 'docs',  name: 'Info del venue',          emoji: '📄' }
-    ]
-  },
-
-  playa: {
-    label: '🏖️ Playa',
-    cats: [
-      { id: 'ropa',  name: 'Ropa',  emoji: '🩳' },
-      { id: 'sol',   name: 'Sol',   emoji: '🧴' },
-      { id: 'tech',  name: 'Tech',  emoji: '📱' },
-      { id: 'otros', name: 'Otros', emoji: '✨' }
-    ],
-    items: [
-      { cat: 'sol',  name: 'Bloqueador',      emoji: '🧴' },
-      { cat: 'sol',  name: 'Gafas',           emoji: '🕶️' },
-      { cat: 'ropa', name: 'Vestido de baño', emoji: '👙' },
-      { cat: 'ropa', name: 'Toalla',          emoji: '🧻' },
-      { cat: 'tech', name: 'Cargador',        emoji: '🔌' }
-    ]
-  },
-
-  frio: {
-    label: '❄️ Clima frío',
-    cats: [
-      { id: 'ropa',  name: 'Ropa',  emoji: '🧥' },
-      { id: 'salud', name: 'Salud', emoji: '🫖' },
-      { id: 'tech',  name: 'Tech',  emoji: '🔌' },
-      { id: 'otros', name: 'Otros', emoji: '✨' }
-    ],
-    items: [
-      { cat: 'ropa',  name: 'Chaqueta gruesa',     emoji: '🧥' },
-      { cat: 'ropa',  name: 'Guantes',             emoji: '🧤' },
-      { cat: 'ropa',  name: 'Gorro',               emoji: '🧢' },
-      { cat: 'salud', name: 'Humectante / labios', emoji: '💄' },
-      { cat: 'tech',  name: 'Cargador',            emoji: '🔌' }
-    ]
-  }
-};
-
-function presetFor(mode) {
-  return PRESETS[mode] || null;
-}
-
 function uid() {
   return Math.random().toString(16).slice(2) + Date.now().toString(16);
 }
 
-/**
- * newPreset(mode)
- * Se deja en shape simple porque storage.js ya lo normaliza.
- */
-function newPreset(mode) {
-  const p = presetFor(mode) || {
-    label: `🧳 ${prettyModeLabel(mode)}`,
-    cats: [
-      { id: 'tech',  name: 'Tecnología', emoji: '🔌' },
-      { id: 'ropa',  name: 'Ropa',       emoji: '👕' },
-      { id: 'otros', name: 'Otros',      emoji: '✨' }
-    ],
-    items: []
-  };
-
-  return {
-    version: 3,
-    mode,
-    cats: p.cats.map(x => ({ ...x })),
-    items: p.items.map(x => ({
-      id: uid(),
-      cat: x.cat,
-      name: x.name,
-      emoji: x.emoji || null,
-      done: false
-    })),
-    completedOnceByMode: { [mode]: false },
-    __completedOnceByMode: { [mode]: false }
-  };
-}
-
-/* =========================
-   DOM
-========================= */
+/* ============================================================================
+  DOM
+============================================================================ */
 
 const els = {
   desktopBlock: document.getElementById('desktopBlock'),
@@ -219,12 +69,14 @@ const els = {
   btnCloseEdit: document.getElementById('btnCloseEdit'),
   btnCloseModes: document.getElementById('btnCloseModes'),
 
-  tripMode: document.getElementById('tripMode'),
   toggleMotion: document.getElementById('toggleMotion'),
   toggleSound: document.getElementById('toggleSound'),
   btnWipe: document.getElementById('btnWipe'),
 
   btnManageModes: document.getElementById('btnManageModes'),
+
+  tripMode: document.getElementById('tripMode'),
+
   modeEditorSelect: document.getElementById('modeEditorSelect'),
   newModeName: document.getElementById('newModeName'),
   modeItemsCount: document.getElementById('modeItemsCount'),
@@ -246,56 +98,55 @@ const els = {
   btnAddToMode: document.getElementById('btnAddToMode')
 };
 
-/* =========================
-   SINGLE BOOT GUARD
-========================= */
+/* ============================================================================
+  SINGLE BOOT GUARD
+============================================================================ */
 
-if (!window.__MALETA_APP_BOOTED__) {
-  window.__MALETA_APP_BOOTED__ = true;
+if (!window.__CHECKLIST_APP_BOOTED__) {
+  window.__CHECKLIST_APP_BOOTED__ = true;
   boot();
 }
 
-/* =========================
-   BOOT
-========================= */
+/* ============================================================================
+  BOOT
+============================================================================ */
 
 function boot() {
   const storage = createStorage({
     storageKey: STORAGE_KEY,
     settingsKey: SETTINGS_KEY,
     defaultSettings: DEFAULT_SETTINGS,
-    newPreset,
     uid
   });
 
-  const settings = storage.loadSettings();
-  const data = storage.loadData(settings);
+  const initialState = storage.loadState();
 
   const store = createStore({
-    settings,
-    data,
-    activeCat: 'all'
+    ...initialState,
+    activeCat: ensureString(initialState?.activeCat || 'all', 60) || 'all'
   });
 
   const fx = createFX({
     toastEl: els.toast,
-    getMotion: () => !!store.getState().settings.motion,
-    getSound: () => !!store.getState().settings.sound
+    getMotion: () => !!store.getState().settings?.motion,
+    getSound: () => !!store.getState().settings?.sound
   });
 
-  const savers = storage.createDebouncedSavers(220);
   const {
+    saveStateDebounced,
     saveSettingsDebounced,
-    saveDataDebounced,
     flushAll
-  } = savers;
+  } = storage.createDebouncedSavers(180);
 
   store.subscribe((prev, next) => {
-    if (prev.settings !== next.settings) {
-      saveSettingsDebounced(next.settings);
+    if (!next) return;
+
+    if (prev !== next) {
+      saveStateDebounced(extractPersistentState(next));
     }
-    if (prev.data !== next.data) {
-      saveDataDebounced(next.data);
+
+    if (prev?.settings !== next?.settings) {
+      saveSettingsDebounced(next.settings || DEFAULT_SETTINGS);
     }
   });
 
@@ -303,112 +154,19 @@ function boot() {
     getState: store.getState,
     setState: store.setState,
     deps: {
-      presetFor,
-      newPreset,
       uid,
-
-      saveSettings: () => saveSettingsDebounced(store.getState().settings),
-      saveData: () => saveDataDebounced(store.getState().data),
-
+      saveState: (state) => {
+        saveStateDebounced(extractPersistentState(state || store.getState()));
+      },
+      saveSettings: (settings) => {
+        saveSettingsDebounced(settings || store.getState().settings || DEFAULT_SETTINGS);
+      },
       toast: fx.toast,
       haptic: fx.haptic,
       tickSound: fx.tickSound,
-      confetti: fx.confetti,
-      copyText: fx.copyText
+      confetti: () => {}
     }
   });
-
-  ensureDataHydrated();
-  ensureValidSelectedMode();
-  syncModeTheme(store.getState().settings.tripMode);
-
-  /* =========================
-     RENDER SCHEDULER
-  ========================= */
-
-  const renderState = {
-    scheduled: false,
-    flags: {
-      all: false,
-      header: false,
-      tabs: false,
-      list: false,
-      progress: false,
-      selects: false,
-      modeSelects: false,
-      modeManager: false
-    }
-  };
-
-  function scheduleRender(part = 'all') {
-    if (part === 'all') {
-      resetRenderFlags();
-      renderState.flags.all = true;
-    } else if (part in renderState.flags) {
-      renderState.flags[part] = true;
-    } else {
-      renderState.flags.all = true;
-    }
-
-    if (renderState.scheduled) return;
-    renderState.scheduled = true;
-
-    requestAnimationFrame(() => {
-      renderState.scheduled = false;
-      const st = store.getState();
-
-      if (renderState.flags.all) {
-        resetRenderFlags();
-        renderAll(st);
-        return;
-      }
-
-      if (renderState.flags.header) {
-        renderHeader(st);
-        renderState.flags.header = false;
-      }
-
-      if (renderState.flags.tabs) {
-        renderTabs(st, els.tabRow);
-        renderState.flags.tabs = false;
-      }
-
-      if (renderState.flags.selects) {
-        renderCategorySelects(st);
-        renderState.flags.selects = false;
-      }
-
-      if (renderState.flags.modeSelects) {
-        renderModeSelects(st);
-        renderState.flags.modeSelects = false;
-      }
-
-      if (renderState.flags.list) {
-        renderList(st, els.list);
-        renderState.flags.list = false;
-      }
-
-      if (renderState.flags.progress) {
-        runProgress(st);
-        renderState.flags.progress = false;
-      }
-
-      if (renderState.flags.modeManager) {
-        renderModeManager(st);
-        renderState.flags.modeManager = false;
-      }
-    });
-  }
-
-  function resetRenderFlags() {
-    for (const k of Object.keys(renderState.flags)) {
-      renderState.flags[k] = false;
-    }
-  }
-
-  /* =========================
-     UI INIT
-  ========================= */
 
   const ui = initUI({
     els,
@@ -416,37 +174,82 @@ function boot() {
     actions,
     fx,
     storage,
-    onAfterStateChange: () => scheduleRender('all')
+    onAfterStateChange: () => scheduleRender()
   });
 
-  /* =========================
-     RENDER EVENTS
-  ========================= */
+  let renderScheduled = false;
+
+  function scheduleRender() {
+    if (renderScheduled) return;
+    renderScheduled = true;
+
+    requestAnimationFrame(() => {
+      renderScheduled = false;
+      normalizeAppState();
+      renderApp();
+    });
+  }
+
+  function normalizeAppState() {
+    ensureHydratedState();
+    ensureValidActiveList();
+    ensureActiveCatStillExists();
+  }
+
+  function renderApp() {
+    const st = store.getState();
+
+    syncListTheme(getCurrentListId(st));
+    syncPrimaryListSelect(getCurrentListId(st));
+
+    renderHeader(st);
+    renderListSelects(st);
+    renderTabs(st, els.tabRow);
+    renderCategorySelects(st);
+    renderList(st, els.list);
+    renderProgressSection(st);
+    renderListManager(st);
+  }
+
+  normalizeAppState();
 
   setupRenderEvents({
     tabRow: els.tabRow,
     list: els.list,
 
     onTab: (catId) => {
-      fx.haptic?.(10);
-      store.setState({ activeCat: catId || 'all' });
-      scheduleRender('tabs');
-      scheduleRender('list');
-      scheduleRender('progress');
+      store.setState({
+        ...store.getState(),
+        activeCat: normalizeCatId(catId || 'all')
+      });
+
+      fx.haptic?.(8);
+      scheduleRender();
     },
 
     onToggle: (id) => {
-      actions.toggleDone?.(id);
-      scheduleRender('list');
-      scheduleRender('progress');
-      scheduleRender('header');
-      scheduleRender('modeManager');
+      const result = actions.toggleDone?.(id);
+
+      if (!result?.ok) {
+        fx.toast?.('No se pudo marcar ese ítem 🙃');
+        fx.haptic?.(14);
+        return;
+      }
+
+      scheduleRender();
     },
 
     onDelete: (id) => {
-      actions.deleteItem?.(id);
+      const result = actions.deleteItem?.(id);
+
+      if (!result?.ok) {
+        fx.toast?.('No se pudo eliminar ese ítem 🙃');
+        fx.haptic?.(14);
+        return;
+      }
+
       ensureActiveCatStillExists();
-      scheduleRender('all');
+      scheduleRender();
     },
 
     onEdit: (id) => {
@@ -454,141 +257,99 @@ function boot() {
     }
   });
 
-  /* =========================
-     GESTURES
-  ========================= */
-
-  initGestures?.({
-    listEl: els.list,
-    store,
-    fx,
-    onToggle: (id) => {
-      actions.toggleDone?.(id);
-      scheduleRender('list');
-      scheduleRender('progress');
-      scheduleRender('header');
-      scheduleRender('modeManager');
-    },
-    onDelete: (id) => {
-      actions.deleteItem?.(id);
-      ensureActiveCatStillExists();
-      scheduleRender('all');
-    }
-  });
-
-  /* =========================
-     EDIT MODAL
-  ========================= */
-
+  bindPrimaryControls();
   bindEditModal();
-  bindModesManager();
   bindAddEnhancements();
-
-  /* =========================
-     MODE SWITCH
-  ========================= */
-
-  bindOnce(els.tripMode, 'change', (e) => {
-    const mode = String(e.target.value || 'salida');
-    changeMode(mode);
-  }, 'trip-mode-change');
-
-  /* =========================
-     LIFECYCLE / SAFETY
-  ========================= */
+  bindLightListManagerSync();
 
   bindOnce(window, 'beforeunload', () => {
-    try { flushAll?.(); } catch {}
+    try {
+      flushAll?.();
+    } catch {}
   }, 'beforeunload-flush');
 
   bindOnce(document, 'visibilitychange', () => {
     if (document.visibilityState === 'hidden') {
-      try { flushAll?.(); } catch {}
+      try {
+        flushAll?.();
+      } catch {}
     }
   }, 'visibilitychange-flush');
 
-  /* =========================
-     FIRST PAINT
-  ========================= */
+  renderApp();
 
-  renderAll(store.getState());
-
-  /* =========================
-     HELPERS
-  ========================= */
-
-  function renderAll() {
-    ensureDataHydrated();
-    ensureValidSelectedMode();
-
-    const fresh = store.getState();
-
-    syncModeTheme(fresh.settings.tripMode);
-    syncModeSelect(fresh.settings.tripMode);
-
-    renderHeader(fresh);
-    renderModeSelects(fresh);
-    renderTabs(fresh, els.tabRow);
-    renderCategorySelects(fresh);
-    renderList(fresh, els.list);
-    runProgress(fresh);
-    renderModeManager(fresh);
-  }
+  /* ==========================================================================
+    RENDER HELPERS
+  ========================================================================== */
 
   function renderHeader(st) {
-    const mode = String(st?.settings?.tripMode || 'salida');
-    const modesMap = getModesMap(st);
-    const label = modesMap?.[mode]?.label || (presetFor(mode)?.label) || `🧳 ${prettyModeLabel(mode)}`;
+    const currentList = getCurrentList(st);
+    const currentName = currentList?.name || 'Mi lista';
+    const currentIcon = currentList?.icon || '🧾';
+    const streak = Number(st?.settings?.streak || 0);
 
     if (els.tripPill) {
-      els.tripPill.textContent = label;
+      els.tripPill.textContent = `${currentIcon} ${currentName}`;
     }
 
     if (els.streakChip) {
-      els.streakChip.textContent = `✨ ${st?.settings?.streak || 0}`;
+      els.streakChip.textContent = `✨ Racha: ${streak}`;
+      els.streakChip.setAttribute('aria-label', `Racha actual: ${streak}`);
+      els.streakChip.title = `Racha actual: ${streak}`;
     }
+
+    syncNativeToggleInput(els.toggleMotion, !!st?.settings?.motion);
+    syncNativeToggleInput(els.toggleSound, !!st?.settings?.sound);
   }
 
   function renderCategorySelects(st = store.getState()) {
     renderAddCategories(st, els.newCat);
     renderAddCategories(st, els.editCat);
 
-    const currentCat = normalizeCatId(els.editCat?.value || 'otros');
-    const cats = getCatsForCurrentMode();
-    const exists = cats.some(c => normalizeCatId(c?.id || c?.key || '') === currentCat);
+    if (!els.editCat) return;
 
-    if (els.editCat && !exists && cats.length) {
-      els.editCat.value = normalizeCatId(cats[0]?.id || 'otros');
+    const currentCat = normalizeCatId(els.editCat.value || 'general');
+    const categories = getCategoriesForCurrentList(st);
+
+    const exists = categories.some((cat) => {
+      const id = normalizeCatId(cat?.id || cat?.key || cat);
+      return id === currentCat;
+    });
+
+    if (!exists && categories.length) {
+      const first = categories[0];
+      els.editCat.value = normalizeCatId(first?.id || first?.key || first || 'general');
     }
   }
 
-  function renderModeSelects(st = store.getState()) {
-    const modes = getModesEntries(st);
-    const currentMode = getCurrentMode();
-    const editingMode = String(els.modeEditorSelect?.value || currentMode);
+  function renderListSelects(st = store.getState()) {
+    const lists = getListEntries(st);
+    const currentListId = getCurrentListId(st);
+    const editorListId = ensureString(els.modeEditorSelect?.value, 120) || currentListId;
 
-    fillModeSelect(els.tripMode, modes, currentMode);
-    fillModeSelect(els.newModeTarget, modes, currentMode);
-    fillModeSelect(els.dupMode, modes, currentMode);
-    fillModeSelect(els.modeEditorSelect, modes, editingMode);
-
-    if (els.modeEditorSelect && !hasMode(editingMode, st)) {
-      els.modeEditorSelect.value = currentMode;
-    }
+    fillListSelect(els.tripMode, lists, currentListId);
+    fillListSelect(els.newModeTarget, lists, currentListId);
+    fillListSelect(els.dupMode, lists, currentListId);
+    fillListSelect(
+      els.modeEditorSelect,
+      lists,
+      hasList(editorListId, st) ? editorListId : currentListId
+    );
   }
 
-  function renderModeManager(st = store.getState()) {
+  function renderListManager(st = store.getState()) {
     if (!els.modesList) return;
 
-    const currentEditorMode = String(els.modeEditorSelect?.value || getCurrentMode());
-    const modes = getModesEntries(st);
-    const currentItems = getItemsForMode(currentEditorMode);
+    const currentEditorListId =
+      ensureString(els.modeEditorSelect?.value, 120) || getCurrentListId(st);
+
+    const lists = getListEntries(st);
+    const currentItems = getItemsForList(currentEditorListId, st);
 
     if (els.newModeName) {
-      const selectedMeta = getModeMeta(currentEditorMode, st);
-      const labelText = stripLeadingEmoji(selectedMeta?.label || prettyModeLabel(currentEditorMode));
+      const selectedList = getListById(currentEditorListId, st);
       if (document.activeElement !== els.newModeName) {
-        els.newModeName.value = labelText || '';
+        els.newModeName.value = selectedList?.name || '';
       }
     }
 
@@ -596,485 +357,412 @@ function boot() {
       els.modeItemsCount.textContent = String(currentItems.length);
     }
 
-    const canDelete = modes.length > 1;
     if (els.btnDeleteMode) {
+      const canDelete = lists.length > 1;
       els.btnDeleteMode.disabled = !canDelete;
       els.btnDeleteMode.setAttribute('aria-disabled', String(!canDelete));
     }
 
-    els.modesList.innerHTML = modes.map(({ key, label }) => {
-      const isActive = key === getCurrentMode();
-      const isEditing = key === currentEditorMode;
-      const count = getItemsForMode(key).length;
+    const html = lists.map(({ key, label, icon }) => {
+      const isActive = key === getCurrentListId(st);
+      const isEditing = key === currentEditorListId;
+      const count = getItemsForList(key, st).length;
 
       return `
         <button
           type="button"
           class="modeChip${isActive ? ' isActive' : ''}${isEditing ? ' isEditing' : ''}"
-          data-mode-pick="${escapeHtmlAttr(key)}"
+          data-list-pick="${escapeHtmlAttr(key)}"
           aria-label="Seleccionar lista ${escapeHtmlAttr(label)}"
           title="${escapeHtmlAttr(label)}"
         >
-          <span class="modeChipLabel">${escapeHtml(label)}</span>
+          <span class="modeChipLabel">${escapeHtml(`${icon} ${label}`)}</span>
           <span class="modeChipMeta">${count}</span>
         </button>
       `;
     }).join('');
+
+    if (els.modesList.innerHTML !== html) {
+      els.modesList.innerHTML = html;
+    }
   }
 
-  function runProgress(st = store.getState()) {
-    const result = renderProgress(st, {
+  function renderProgressSection(st = store.getState()) {
+    renderProgress(st, {
       progressFill: els.progressFill,
       progressText: els.progressText,
       progressPct: els.progressPct,
       progressBarEl: els.progressBar
     });
+  }
 
-    if (result?.completed) {
-      const ok = actions.onCompletedOnce?.();
+  /* ==========================================================================
+    STATE HELPERS
+  ========================================================================== */
 
-      if (ok?.ok) {
-        const next = store.getState();
+  function extractPersistentState(state) {
+    const source = state || store.getState();
 
-        if (els.streakChip) {
-          els.streakChip.textContent = `✨ ${next.settings.streak || 0}`;
-        }
+    return {
+      version: source.version || 1,
+      savedAt: nowIso(),
+      currentListId: source.currentListId || null,
+      settings: {
+        motion: !!source.settings?.motion,
+        sound: !!source.settings?.sound,
+        streak: Number.isFinite(Number(source.settings?.streak))
+          ? Number(source.settings.streak)
+          : 0
+      },
+      lists: Array.isArray(source.lists)
+        ? source.lists.map((list) => ({ ...list }))
+        : [],
+      itemsByListId: clone(source.itemsByListId || {})
+    };
+  }
 
-        if (els.progressBar && next.settings.motion) {
-          els.progressBar.classList.add('glow');
-          setTimeout(() => els.progressBar?.classList.remove('glow'), 900);
-        }
+  function ensureHydratedState() {
+    const st = store.getState();
+    const next = extractPersistentState(st);
+
+    let changed = false;
+
+    if (!Array.isArray(next.lists)) {
+      next.lists = [];
+      changed = true;
+    }
+
+    if (
+      !next.itemsByListId ||
+      typeof next.itemsByListId !== 'object' ||
+      Array.isArray(next.itemsByListId)
+    ) {
+      next.itemsByListId = {};
+      changed = true;
+    }
+
+    if (
+      !next.settings ||
+      typeof next.settings !== 'object' ||
+      Array.isArray(next.settings)
+    ) {
+      next.settings = { ...DEFAULT_SETTINGS };
+      changed = true;
+    }
+
+    if (!next.lists.length) {
+      const created = actions._util?.createListRecord
+        ? actions._util.createListRecord({ name: 'Mi lista', icon: '🧾' })
+        : {
+            id: uid(),
+            name: 'Mi lista',
+            icon: '🧾',
+            createdAt: nowIso(),
+            updatedAt: nowIso()
+          };
+
+      next.lists = [created];
+      next.currentListId = created.id;
+      next.itemsByListId[created.id] = [];
+      changed = true;
+    }
+
+    const seenListIds = new Set();
+    const sanitizedLists = [];
+
+    for (const rawList of next.lists) {
+      const list = actions._util?.createListRecord
+        ? actions._util.createListRecord(rawList)
+        : {
+            id: ensureString(rawList?.id, 120) || uid(),
+            name: ensureString(rawList?.name, 80) || 'Mi lista',
+            icon: ensureString(rawList?.icon, 16) || '🧾',
+            createdAt: ensureString(rawList?.createdAt, 40) || nowIso(),
+            updatedAt: ensureString(rawList?.updatedAt, 40) || nowIso()
+          };
+
+      if (!list.id || seenListIds.has(list.id)) {
+        changed = true;
+        continue;
+      }
+
+      seenListIds.add(list.id);
+      sanitizedLists.push(list);
+
+      if (!Array.isArray(next.itemsByListId[list.id])) {
+        next.itemsByListId[list.id] = [];
+        changed = true;
       }
     }
 
-    return result;
-  }
+    if (!sanitizedLists.length) {
+      const created = actions._util?.createListRecord
+        ? actions._util.createListRecord({ name: 'Mi lista', icon: '🧾' })
+        : {
+            id: uid(),
+            name: 'Mi lista',
+            icon: '🧾',
+            createdAt: nowIso(),
+            updatedAt: nowIso()
+          };
 
-  function syncModeTheme(mode) {
-    document.documentElement.dataset.mode = mode || 'salida';
-  }
-
-  function syncModeSelect(mode) {
-    if (els.tripMode && els.tripMode.value !== mode) {
-      els.tripMode.value = mode;
-    }
-  }
-
-  function changeMode(mode) {
-    const nextMode = normalizeModeKey(mode || 'salida');
-    const st = store.getState();
-
-    if (!hasMode(nextMode, st)) {
-      fx.toast?.('Esa lista no existe 🙃');
-      fx.haptic?.(14);
-      renderModeSelects(st);
-      return;
+      sanitizedLists.push(created);
+      next.itemsByListId[created.id] = [];
+      next.currentListId = created.id;
+      changed = true;
     }
 
-    if (actions.changeMode) {
-      actions.changeMode(nextMode);
-    } else {
+    next.lists = sanitizedLists;
+
+    const validIds = new Set(next.lists.map((list) => list.id));
+    for (const key of Object.keys(next.itemsByListId)) {
+      if (!validIds.has(key)) {
+        delete next.itemsByListId[key];
+        changed = true;
+      }
+    }
+
+    if (
+      !next.currentListId ||
+      !next.lists.some((list) => list.id === next.currentListId)
+    ) {
+      next.currentListId = next.lists[0]?.id || null;
+      changed = true;
+    }
+
+    if (changed) {
       store.setState({
-        settings: {
-          ...st.settings,
-          tripMode: nextMode
-        }
+        ...store.getState(),
+        ...next
       });
     }
-
-    syncModeTheme(nextMode);
-    store.setState({ activeCat: 'all' });
-
-    ensureActiveCatStillExists();
-    scheduleRender('all');
-    fx.haptic?.(10);
   }
 
-  function getCurrentMode() {
+  function ensureValidActiveList() {
     const st = store.getState();
-    return normalizeModeKey(st?.settings?.tripMode || st?.data?.mode || 'salida');
-  }
+    const current = getCurrentListId(st);
 
-  function getModeMeta(mode, st = store.getState()) {
-    const key = normalizeModeKey(mode);
-    const modes = getModesMap(st);
-    return modes[key] || null;
-  }
+    if (current && hasList(current, st)) return;
 
-  function getModesMap(st = store.getState()) {
-    const dataModes = st?.data?.modes;
-    if (dataModes && typeof dataModes === 'object' && !Array.isArray(dataModes)) {
-      return dataModes;
+    const first = getListEntries(st)[0]?.key || null;
+
+    if (first) {
+      store.setState({
+        ...st,
+        currentListId: first
+      });
     }
-
-    const fallback = {};
-    for (const key of Object.keys(PRESETS)) {
-      fallback[key] = { label: PRESETS[key].label };
-    }
-    return fallback;
   }
 
-  function getModesEntries(st = store.getState()) {
-    const modesMap = getModesMap(st);
+  function getCurrentList(state = store.getState()) {
+    return getListById(state?.currentListId, state);
+  }
 
-    return Object.keys(modesMap).map((key) => ({
-      key,
-      label: String(modesMap[key]?.label || prettyModeLabel(key))
+  function getCurrentListId(state = store.getState()) {
+    return ensureString(state?.currentListId, 120) || null;
+  }
+
+  function getListById(listId, state = store.getState()) {
+    const cleanId = ensureString(listId, 120);
+    return (Array.isArray(state?.lists) ? state.lists : []).find((list) => list.id === cleanId) || null;
+  }
+
+  function getListEntries(state = store.getState()) {
+    const lists = Array.isArray(state?.lists) ? state.lists : [];
+
+    return lists.map((list) => ({
+      key: list.id,
+      label: list.name || 'Lista',
+      icon: list.icon || '🧾'
     }));
   }
 
-  function hasMode(mode, st = store.getState()) {
-    const key = normalizeModeKey(mode);
-    const modes = getModesMap(st);
-    return !!modes[key];
+  function hasList(listId, state = store.getState()) {
+    return !!getListById(listId, state);
   }
 
-  function getItemsForCurrentMode() {
-    return getItemsForMode(getCurrentMode());
+  function getItemsForCurrentList(state = store.getState()) {
+    return getItemsForList(getCurrentListId(state), state);
   }
 
-  function getItemsForMode(mode) {
-    const st = store.getState();
-    const key = normalizeModeKey(mode);
+  function getItemsForList(listId, state = store.getState()) {
+    const cleanId = ensureString(listId, 120);
+    const map =
+      state?.itemsByListId && typeof state.itemsByListId === 'object'
+        ? state.itemsByListId
+        : {};
 
-    if (st?.data?.itemsByMode && typeof st.data.itemsByMode === 'object') {
-      const arr = st.data.itemsByMode[key];
-      return Array.isArray(arr) ? arr : [];
+    return Array.isArray(map[cleanId]) ? map[cleanId] : [];
+  }
+
+  function getCategoriesForCurrentList(state = store.getState()) {
+    const items = getItemsForCurrentList(state);
+    const bucket = new Map();
+
+    for (const item of items) {
+      const key = normalizeCatId(item?.category || 'general');
+
+      if (!bucket.has(key)) {
+        bucket.set(key, {
+          id: key,
+          key,
+          name: prettifyCategory(key),
+          label: prettifyCategory(key)
+        });
+      }
     }
 
-    if (key === getCurrentMode() && Array.isArray(st?.data?.items)) {
-      return st.data.items;
+    if (!bucket.size) {
+      bucket.set('general', {
+        id: 'general',
+        key: 'general',
+        name: 'General',
+        label: 'General'
+      });
     }
 
-    return [];
-  }
-
-  function getCatsForCurrentMode() {
-    return getCatsForMode(getCurrentMode());
-  }
-
-  function getCatsForMode(mode) {
-    const st = store.getState();
-    const key = normalizeModeKey(mode);
-
-    if (st?.data?.catsByMode && typeof st.data.catsByMode === 'object') {
-      const arr = st.data.catsByMode[key];
-      if (Array.isArray(arr)) return arr;
-    }
-
-    if (key === getCurrentMode() && Array.isArray(st?.data?.cats)) {
-      return st.data.cats;
-    }
-
-    return [];
-  }
-
-  function normalizeCatId(v) {
-    const raw = String(v ?? '').trim().toLowerCase();
-
-    const s = raw
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-z0-9\s_-]/g, '')
-      .replace(/\s+/g, '-')
-      .replace(/-+/g, '-')
-      .replace(/^[-_]+|[-_]+$/g, '');
-
-    return s || 'otros';
-  }
-
-  function normalizeModeKey(v) {
-    const raw = String(v ?? '').trim().toLowerCase();
-
-    const s = raw
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-z0-9\s_-]/g, '')
-      .replace(/\s+/g, '-')
-      .replace(/-+/g, '-')
-      .replace(/^[-_]+|[-_]+$/g, '');
-
-    return s || 'salida';
-  }
-
-  function prettyModeLabel(mode) {
-    const key = normalizeModeKey(mode);
-    if (PRESETS[key]?.label) return stripLeadingEmoji(PRESETS[key].label);
-    return key
-      .replace(/[-_]+/g, ' ')
-      .replace(/\b\w/g, (m) => m.toUpperCase());
+    return Array.from(bucket.values());
   }
 
   function getItemById(id) {
-    const wanted = String(id || '');
+    const wanted = ensureString(id, 120);
     if (!wanted) return null;
 
-    const items = getItemsForCurrentMode();
-    return items.find(x => x && String(x.id) === wanted) || null;
+    const items = getItemsForCurrentList();
+    return items.find((item) => item?.id === wanted) || null;
   }
 
   function ensureActiveCatStillExists() {
     const st = store.getState();
-    const active = String(st?.activeCat || 'all');
+    const active = ensureString(st?.activeCat || 'all', 60);
 
     if (active === 'all') return;
 
-    const cats = getCatsForCurrentMode();
-    const exists = cats.some((c) => {
-      const id = normalizeCatId(c?.id || c?.key || '');
+    const cats = getCategoriesForCurrentList(st);
+    const exists = cats.some((cat) => {
+      const id = normalizeCatId(cat?.id || cat?.key || cat);
       return id === normalizeCatId(active);
     });
 
     if (!exists) {
-      store.setState({ activeCat: 'all' });
-    }
-  }
-
-  function ensureDataHydrated() {
-    const st = store.getState();
-    const nextData = clone(st.data || {});
-    let changed = false;
-
-    if (!nextData.modes || typeof nextData.modes !== 'object' || Array.isArray(nextData.modes)) {
-      nextData.modes = {};
-      changed = true;
-    }
-
-    if (!nextData.itemsByMode || typeof nextData.itemsByMode !== 'object' || Array.isArray(nextData.itemsByMode)) {
-      nextData.itemsByMode = {};
-      changed = true;
-    }
-
-    if (!nextData.catsByMode || typeof nextData.catsByMode !== 'object' || Array.isArray(nextData.catsByMode)) {
-      nextData.catsByMode = {};
-      changed = true;
-    }
-
-    if (!nextData.completedOnceByMode || typeof nextData.completedOnceByMode !== 'object' || Array.isArray(nextData.completedOnceByMode)) {
-      nextData.completedOnceByMode = {};
-      changed = true;
-    }
-
-    if (!nextData.__completedOnceByMode || typeof nextData.__completedOnceByMode !== 'object' || Array.isArray(nextData.__completedOnceByMode)) {
-      nextData.__completedOnceByMode = { ...(nextData.completedOnceByMode || {}) };
-      changed = true;
-    }
-
-    const legacyMode = normalizeModeKey(st?.settings?.tripMode || nextData.mode || 'salida');
-
-    if (Array.isArray(nextData.items) || Array.isArray(nextData.cats)) {
-      if (!Array.isArray(nextData.itemsByMode[legacyMode])) {
-        nextData.itemsByMode[legacyMode] = Array.isArray(nextData.items)
-          ? nextData.items.map(cloneItem)
-          : [];
-        changed = true;
-      }
-
-      if (!Array.isArray(nextData.catsByMode[legacyMode])) {
-        nextData.catsByMode[legacyMode] = Array.isArray(nextData.cats)
-          ? nextData.cats.map(x => ({ ...x }))
-          : (newPreset(legacyMode).cats || []).map(x => ({ ...x }));
-        changed = true;
-      }
-
-      if (!nextData.modes[legacyMode]) {
-        nextData.modes[legacyMode] = {
-          label: (presetFor(legacyMode)?.label) || `🧳 ${prettyModeLabel(legacyMode)}`
-        };
-        changed = true;
-      }
-    }
-
-    const modeKeys = new Set([
-      ...Object.keys(nextData.modes || {}),
-      ...Object.keys(nextData.itemsByMode || {}),
-      ...Object.keys(nextData.catsByMode || {}),
-      ...Object.keys(PRESETS)
-    ]);
-
-    for (const rawKey of modeKeys) {
-      const key = normalizeModeKey(rawKey);
-      if (!key) continue;
-
-      if (!nextData.modes[key]) {
-        nextData.modes[key] = {
-          label: (presetFor(key)?.label) || `🧳 ${prettyModeLabel(key)}`
-        };
-        changed = true;
-      }
-
-      if (!Array.isArray(nextData.catsByMode[key])) {
-        nextData.catsByMode[key] = (newPreset(key).cats || []).map(x => ({ ...x }));
-        changed = true;
-      }
-
-      if (!Array.isArray(nextData.itemsByMode[key])) {
-        nextData.itemsByMode[key] = (newPreset(key).items || []).map(cloneItem);
-        changed = true;
-      }
-
-      if (typeof nextData.completedOnceByMode[key] !== 'boolean') {
-        nextData.completedOnceByMode[key] = false;
-        changed = true;
-      }
-
-      if (typeof nextData.__completedOnceByMode[key] !== 'boolean') {
-        nextData.__completedOnceByMode[key] = !!nextData.completedOnceByMode[key];
-        changed = true;
-      }
-    }
-
-    if (changed) {
-      store.setState({ data: nextData });
-    }
-  }
-
-  function ensureValidSelectedMode() {
-    const st = store.getState();
-    const current = normalizeModeKey(st?.settings?.tripMode || 'salida');
-
-    if (!hasMode(current, st)) {
-      const first = getModesEntries(st)[0]?.key || 'salida';
       store.setState({
-        settings: {
-          ...st.settings,
-          tripMode: first
-        }
+        ...store.getState(),
+        activeCat: 'all'
       });
     }
   }
 
-  function applyDataMutator(mutator) {
+  /* ==========================================================================
+    PRIMARY CONTROLS
+  ========================================================================== */
+
+  function bindPrimaryControls() {
+    bindOnce(els.tripMode, 'change', (e) => {
+      const listId = ensureString(e.target.value, 120);
+      if (!listId) return;
+      changeList(listId);
+    }, 'primary-list-change');
+
+    bindOnce(els.btnReset, 'click', () => {
+      actions.resetChecks?.();
+      scheduleRender();
+    }, 'btn-reset');
+
+    bindOnce(els.btnSelectAll, 'click', () => {
+      actions.setAll?.(true);
+      scheduleRender();
+    }, 'btn-select-all');
+
+    bindOnce(els.btnUncheckAll, 'click', () => {
+      actions.setAll?.(false);
+      scheduleRender();
+    }, 'btn-uncheck-all');
+
+    bindOnce(els.toggleMotion, 'change', (e) => {
+      actions.setMotion?.(!!e.target.checked);
+      scheduleRender();
+    }, 'toggle-motion');
+
+    bindOnce(els.toggleSound, 'change', (e) => {
+      actions.setSound?.(!!e.target.checked);
+      scheduleRender();
+    }, 'toggle-sound');
+
+    bindOnce(els.btnWipe, 'click', () => {
+      actions.wipeAll?.();
+
+      store.setState({
+        ...store.getState(),
+        activeCat: 'all'
+      });
+
+      scheduleRender();
+    }, 'wipe-all');
+  }
+
+  function changeList(listId) {
+    const cleanId = ensureString(listId, 120);
     const st = store.getState();
-    const nextData = clone(st.data || {});
-    ensureContainers(nextData);
-    mutator(nextData, st);
-    store.setState({ data: nextData });
-    return nextData;
+
+    if (!hasList(cleanId, st)) {
+      fx.toast?.('Esa lista no existe 🙃');
+      fx.haptic?.(14);
+      renderListSelects(st);
+      return;
+    }
+
+    const result = actions.selectList?.(cleanId);
+
+    if (!result?.ok) {
+      fx.toast?.('No se pudo cambiar de lista 🙃');
+      fx.haptic?.(14);
+      renderListSelects(st);
+      return;
+    }
+
+    store.setState({
+      ...store.getState(),
+      activeCat: 'all'
+    });
+
+    syncListTheme(cleanId);
+    ensureActiveCatStillExists();
+    fx.haptic?.(8);
+    scheduleRender();
   }
 
-  function ensureContainers(data) {
-    if (!data.modes || typeof data.modes !== 'object' || Array.isArray(data.modes)) data.modes = {};
-    if (!data.itemsByMode || typeof data.itemsByMode !== 'object' || Array.isArray(data.itemsByMode)) data.itemsByMode = {};
-    if (!data.catsByMode || typeof data.catsByMode !== 'object' || Array.isArray(data.catsByMode)) data.catsByMode = {};
-    if (!data.completedOnceByMode || typeof data.completedOnceByMode !== 'object' || Array.isArray(data.completedOnceByMode)) data.completedOnceByMode = {};
-    if (!data.__completedOnceByMode || typeof data.__completedOnceByMode !== 'object' || Array.isArray(data.__completedOnceByMode)) {
-      data.__completedOnceByMode = { ...(data.completedOnceByMode || {}) };
+  function syncListTheme(listId) {
+    const list = getListById(listId);
+    const key = slugifyListName(list?.name || 'lista');
+    document.documentElement.dataset.mode = key || 'lista';
+  }
+
+  function syncPrimaryListSelect(listId) {
+    if (els.tripMode && els.tripMode.value !== listId) {
+      els.tripMode.value = listId;
     }
   }
 
-  function ensureModeInitialized(data, mode, options = {}) {
-    ensureContainers(data);
+  function syncNativeToggleInput(inputEl, checked) {
+    if (!inputEl) return;
 
-    const key = normalizeModeKey(mode);
-    const templateMode = normalizeModeKey(options.templateMode || key);
-    const templateItems = Array.isArray(data.itemsByMode[templateMode]) ? data.itemsByMode[templateMode] : null;
-    const templateCats = Array.isArray(data.catsByMode[templateMode]) ? data.catsByMode[templateMode] : null;
-
-    if (!data.modes[key]) {
-      const baseLabel = options.label || data.modes[templateMode]?.label || (presetFor(key)?.label) || `🧳 ${prettyModeLabel(key)}`;
-      data.modes[key] = { label: String(baseLabel) };
-    }
-
-    if (!Array.isArray(data.catsByMode[key])) {
-      if (templateCats && templateMode !== key) {
-        data.catsByMode[key] = templateCats.map(x => ({ ...x }));
-      } else {
-        data.catsByMode[key] = (newPreset(key).cats || []).map(x => ({ ...x }));
-      }
-    }
-
-    if (!Array.isArray(data.itemsByMode[key])) {
-      if (templateItems && templateMode !== key) {
-        data.itemsByMode[key] = templateItems.map(x => ({
-          ...cloneItem(x),
-          id: uid(),
-          done: false
-        }));
-      } else {
-        data.itemsByMode[key] = [];
-      }
-    }
-
-    if (typeof data.completedOnceByMode[key] !== 'boolean') {
-      data.completedOnceByMode[key] = false;
-    }
-
-    if (typeof data.__completedOnceByMode[key] !== 'boolean') {
-      data.__completedOnceByMode[key] = !!data.completedOnceByMode[key];
-    }
-
-    return key;
-  }
-
-  function clone(value) {
-    return JSON.parse(JSON.stringify(value));
-  }
-
-  function cloneItem(item) {
-    return {
-      id: String(item?.id || uid()),
-      cat: normalizeCatId(item?.cat || 'otros'),
-      name: String(item?.name || '').trim(),
-      emoji: item?.emoji ? String(item.emoji) : null,
-      done: !!item?.done
-    };
-  }
-
-  function stripLeadingEmoji(text = '') {
-    return String(text)
-      .replace(/^[^\p{L}\p{N}]+/u, '')
-      .trim();
-  }
-
-  function escapeHtml(text = '') {
-    return String(text)
-      .replaceAll('&', '&amp;')
-      .replaceAll('<', '&lt;')
-      .replaceAll('>', '&gt;')
-      .replaceAll('"', '&quot;')
-      .replaceAll("'", '&#039;');
-  }
-
-  function escapeHtmlAttr(text = '') {
-    return escapeHtml(text);
-  }
-
-  function fillModeSelect(selectEl, modes, selected = '') {
-    if (!selectEl) return;
-
-    const currentValue = String(selected || '');
-    const html = modes.map(({ key, label }) => {
-      const isSelected = key === currentValue ? ' selected' : '';
-      return `<option value="${escapeHtmlAttr(key)}"${isSelected}>${escapeHtml(label)}</option>`;
-    }).join('');
-
-    if (selectEl.innerHTML !== html) {
-      selectEl.innerHTML = html;
-    }
-    if (currentValue && selectEl.value !== currentValue) {
-      selectEl.value = currentValue;
+    const nextChecked = !!checked;
+    if (inputEl.checked !== nextChecked) {
+      inputEl.checked = nextChecked;
     }
   }
 
-  function bindOnce(target, eventName, handler, bindingKey = '') {
-    if (!target || !eventName || typeof handler !== 'function') return;
-    const key = `__bound_${eventName}_${bindingKey || 'default'}`;
-    if (target[key]) return;
-    target[key] = true;
-    target.addEventListener(eventName, handler);
-  }
-
-  /* =========================
-     ADD MODAL SUPPORT
-  ========================= */
+  /* ==========================================================================
+    ADD MODAL SUPPORT
+  ========================================================================== */
 
   function bindAddEnhancements() {
     const syncAddTarget = () => {
-      const current = getCurrentMode();
+      const current = getCurrentListId();
+
       if (els.newModeTarget) {
-        renderModeSelects(store.getState());
-        els.newModeTarget.value = current;
+        renderListSelects(store.getState());
+        els.newModeTarget.value = current || '';
       }
     };
 
@@ -1084,34 +772,37 @@ function boot() {
       if (e.target === els.addOverlay) {
         syncAddTarget();
       }
-    }, 'overlay-sync-target');
+    }, 'add-overlay-sync-target');
 
     bindOnce(els.btnCreate, 'click', () => {
       if (!els.newModeTarget) return;
-      const targetMode = normalizeModeKey(els.newModeTarget.value || getCurrentMode());
-      if (els.newModeTarget.value !== targetMode) {
-        els.newModeTarget.value = targetMode;
+
+      const targetListId =
+        ensureString(els.newModeTarget.value, 120) || getCurrentListId();
+
+      if (targetListId) {
+        els.newModeTarget.value = targetListId;
       }
     }, 'btn-create-normalize-target');
   }
 
-  /* =========================
-     EDIT MODAL
-  ========================= */
+  /* ==========================================================================
+    EDIT MODAL
+  ========================================================================== */
 
   function openEditById(id) {
-    const it = getItemById(id);
-    if (!it || !els.editOverlay) return;
+    const item = getItemById(id);
+    if (!item || !els.editOverlay) return;
 
     renderCategorySelects(store.getState());
-    renderModeSelects(store.getState());
+    renderListSelects(store.getState());
 
-    els.editOverlay.dataset.editingId = String(it.id || '');
+    els.editOverlay.dataset.editingId = String(item.id || '');
 
-    if (els.editName) els.editName.value = it.name || '';
-    if (els.editEmoji) els.editEmoji.value = it.emoji || '';
-    if (els.editCat) els.editCat.value = it.cat || 'otros';
-    if (els.dupMode) els.dupMode.value = getCurrentMode();
+    if (els.editName) els.editName.value = item.text || '';
+    if (els.editEmoji) els.editEmoji.value = item.emoji || '';
+    if (els.editCat) els.editCat.value = item.category || 'general';
+    if (els.dupMode) els.dupMode.value = getCurrentListId() || '';
 
     if (ui?.openEdit) {
       ui.openEdit({ returnFocusEl: document.activeElement });
@@ -1138,76 +829,77 @@ function boot() {
   }
 
   function bindEditModal() {
-    bindOnce(els.btnCloseEdit, 'click', () => closeEdit(), 'close-edit-btn');
+    bindOnce(els.btnCloseEdit, 'click', () => {
+      closeEdit();
+    }, 'close-edit-btn');
 
     bindOnce(els.editOverlay, 'click', (e) => {
-      if (e.target === els.editOverlay) closeEdit();
+      if (e.target === els.editOverlay) {
+        closeEdit();
+      }
     }, 'edit-overlay-close');
 
     bindOnce(window, 'keydown', (e) => {
       if (e.key !== 'Escape') return;
-      if (els.editOverlay?.classList.contains('show')) closeEdit();
-      if (els.modesOverlay?.classList.contains('show')) closeModesManager();
-    }, 'escape-overlays');
+      if (els.editOverlay?.classList.contains('show')) {
+        closeEdit();
+      }
+    }, 'escape-edit-overlay');
 
     bindOnce(els.btnSaveEdit, 'click', () => {
-      const id = String(els.editOverlay?.dataset?.editingId || '');
+      const id = ensureString(els.editOverlay?.dataset?.editingId, 120);
       if (!id) return;
 
       const payload = {
-        name: (els.editName?.value || '').trim(),
-        emoji: (els.editEmoji?.value || '').trim(),
-        cat: String(els.editCat?.value || 'otros')
+        text: ensureString(els.editName?.value, 180),
+        emoji: ensureString(els.editEmoji?.value, 16),
+        category: ensureString(els.editCat?.value, 60)
       };
 
-      const res = actions.editItem?.(id, payload);
+      const result = actions.editItem?.(id, payload);
 
-      if (res?.ok) {
-        ensureActiveCatStillExists();
-        closeEdit();
-        scheduleRender('all');
-      } else {
+      if (!result?.ok) {
         fx.toast?.('No se pudo guardar. Revisa el nombre 🙃');
         fx.haptic?.(14);
+        return;
       }
+
+      ensureActiveCatStillExists();
+      closeEdit();
+      scheduleRender();
     }, 'save-edit');
 
     bindOnce(els.btnAddToMode, 'click', () => {
-      const id = String(els.editOverlay?.dataset?.editingId || '');
-      const targetMode = normalizeModeKey(els.dupMode?.value || '');
+      const id = ensureString(els.editOverlay?.dataset?.editingId, 120);
+      const targetListId = ensureString(els.dupMode?.value, 120);
 
-      if (!id || !targetMode) {
+      if (!id || !targetListId) {
         fx.toast?.('Falta escoger una lista 🙃');
         fx.haptic?.(14);
         return;
       }
 
-      if (targetMode === getCurrentMode()) {
-        fx.toast?.('Ese item ya está en esta lista 😌');
+      if (targetListId === getCurrentListId()) {
+        fx.toast?.('Ese ítem ya está en esta lista 😌');
         fx.haptic?.(8);
         return;
       }
 
-      let res = null;
+      const result =
+        typeof actions.copyItemToList === 'function'
+          ? actions.copyItemToList(id, targetListId)
+          : { ok: false };
 
-      if (typeof actions.assignItemToModes === 'function') {
-        res = actions.assignItemToModes(id, [targetMode]);
-      } else {
-        res = fallbackAddItemToMode(id, targetMode);
-      }
-
-      if (res?.ok) {
-        fx.toast?.('Agregado a la otra lista ✅');
-        fx.haptic?.(10);
-        scheduleRender('all');
-      } else if (res?.reason === 'ALREADY_EXISTS') {
-        fx.toast?.('Ese item ya existe en esa lista 😌');
-        fx.haptic?.(8);
-      } else {
+      if (!result?.ok) {
         fx.toast?.('No se pudo agregar a esa lista 🙃');
         fx.haptic?.(14);
+        return;
       }
-    }, 'add-to-mode');
+
+      fx.toast?.('Agregado a la otra lista ✅');
+      fx.haptic?.(10);
+      scheduleRender();
+    }, 'add-to-other-list');
 
     bindOnce(els.editName, 'keydown', (e) => {
       if (e.key === 'Enter') {
@@ -1217,229 +909,134 @@ function boot() {
     }, 'edit-name-enter');
   }
 
-  function fallbackAddItemToMode(id, targetMode) {
-    const source = getItemById(id);
-    if (!source) return { ok: false, reason: 'NOT_FOUND' };
+  /* ==========================================================================
+    LIST MANAGER
+  ========================================================================== */
 
-    let created = false;
-
-    applyDataMutator((data) => {
-      const currentMode = getCurrentMode();
-      ensureModeInitialized(data, currentMode);
-      ensureModeInitialized(data, targetMode, { templateMode: currentMode });
-
-      const targetItems = data.itemsByMode[targetMode];
-      const exists = targetItems.some((it) =>
-        normalizeCatId(it?.cat) === normalizeCatId(source.cat) &&
-        String(it?.name || '').trim().toLowerCase() === String(source.name || '').trim().toLowerCase()
-      );
-
-      if (exists) return;
-
-      targetItems.unshift({
-        id: uid(),
-        cat: normalizeCatId(source.cat || 'otros'),
-        name: String(source.name || '').trim(),
-        emoji: source.emoji || null,
-        done: false
-      });
-
-      created = true;
-    });
-
-    return created ? { ok: true } : { ok: false, reason: 'ALREADY_EXISTS' };
-  }
-
-  /* =========================
-     MODES MANAGER
-  ========================= */
-
-  function openModesManager() {
-    renderModeSelects(store.getState());
-
-    if (els.modeEditorSelect) {
-      els.modeEditorSelect.value = getCurrentMode();
-    }
-
-    renderModeManager(store.getState());
-
-    if (ui?.closeSettings) {
-      try { ui.closeSettings(); } catch {}
-    } else if (els.settingsOverlay?.classList.contains('show')) {
-      els.settingsOverlay.classList.remove('show');
-      els.settingsOverlay.setAttribute('aria-hidden', 'true');
-    }
-
-    if (els.modesOverlay) {
-      els.modesOverlay.classList.add('show');
-      els.modesOverlay.setAttribute('aria-hidden', 'false');
-      setTimeout(() => els.newModeName?.focus(), 60);
-    }
-
-    scheduleRender('modeManager');
-    fx.haptic?.(8);
-  }
-
-  function closeModesManager() {
-    if (!els.modesOverlay) return;
-    els.modesOverlay.classList.remove('show');
-    els.modesOverlay.setAttribute('aria-hidden', 'true');
-  }
-
-  function bindModesManager() {
-    bindOnce(els.btnManageModes, 'click', () => openModesManager(), 'open-modes-manager');
-    bindOnce(els.btnCloseModes, 'click', () => closeModesManager(), 'close-modes-manager');
-
+  function bindLightListManagerSync() {
     bindOnce(els.modesOverlay, 'click', (e) => {
-      if (e.target === els.modesOverlay) {
-        closeModesManager();
-        return;
+      const pickBtn = e.target?.closest?.('[data-list-pick]');
+      if (!pickBtn) return;
+
+      const listId = ensureString(pickBtn.getAttribute('data-list-pick'), 120);
+      if (!listId) return;
+
+      if (els.modeEditorSelect) {
+        els.modeEditorSelect.value = listId;
       }
 
-      const pickBtn = e.target?.closest?.('[data-mode-pick]');
-      if (pickBtn) {
-        const key = normalizeModeKey(pickBtn.getAttribute('data-mode-pick') || '');
-        if (!key) return;
-        if (els.modeEditorSelect) els.modeEditorSelect.value = key;
-        scheduleRender('modeManager');
-      }
-    }, 'modes-overlay-click');
+      scheduleRender();
+    }, 'lists-overlay-pick');
 
     bindOnce(els.modeEditorSelect, 'change', () => {
-      scheduleRender('modeManager');
-    }, 'mode-editor-select-change');
+      scheduleRender();
+    }, 'list-editor-select-change-light');
+  }
+}
 
-    bindOnce(els.newModeName, 'keydown', (e) => {
-      if (e.key === 'Enter') {
-        e.preventDefault();
-        els.btnCreateMode?.click();
-      }
-    }, 'new-mode-name-enter');
+/* ============================================================================
+  UTILS
+============================================================================ */
 
-    bindOnce(els.btnCreateMode, 'click', () => {
-      const baseMode = normalizeModeKey(els.modeEditorSelect?.value || getCurrentMode());
-      const typedLabelRaw = String(els.newModeName?.value || '').trim();
+function bindOnce(target, eventName, handler, bindingKey = '') {
+  if (!target || !eventName || typeof handler !== 'function') return;
 
-      if (!typedLabelRaw) {
-        fx.toast?.('Ponle nombre a la lista 🙃');
-        fx.haptic?.(14);
-        els.newModeName?.focus();
-        return;
-      }
+  const key = `__bound_${eventName}_${bindingKey || 'default'}`;
+  if (target[key]) return;
 
-      const nextKey = normalizeModeKey(typedLabelRaw);
-      const selectedMeta = getModeMeta(baseMode);
-      const selectedLabelText = stripLeadingEmoji(selectedMeta?.label || prettyModeLabel(baseMode));
-      const isRename = nextKey === baseMode || typedLabelRaw.toLowerCase() === selectedLabelText.toLowerCase();
+  target[key] = true;
+  target.addEventListener(eventName, handler);
+}
 
-      if (isRename) {
-        applyDataMutator((data) => {
-          ensureModeInitialized(data, baseMode, { label: `🧳 ${typedLabelRaw}` });
-          data.modes[baseMode].label = `🧳 ${typedLabelRaw}`;
-        });
+function nowIso() {
+  try {
+    return new Date().toISOString();
+  } catch {
+    return '';
+  }
+}
 
-        fx.toast?.('Lista guardada ✅');
-        fx.haptic?.(10);
+function ensureString(value, maxLen = 100) {
+  const out = String(value ?? '').trim();
+  return maxLen > 0 ? out.slice(0, maxLen) : out;
+}
 
-        if (getCurrentMode() === baseMode) {
-          scheduleRender('header');
-        }
+function normalizeCatId(value) {
+  const raw = ensureString(value, 60).toLowerCase();
 
-        scheduleRender('modeSelects');
-        scheduleRender('modeManager');
-        return;
-      }
+  if (raw === 'all') return 'all';
 
-      const st = store.getState();
+  const clean = raw
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s_-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^[-_]+|[-_]+$/g, '');
 
-      if (hasMode(nextKey, st)) {
-        applyDataMutator((data) => {
-          ensureModeInitialized(data, nextKey);
-          data.modes[nextKey].label = `🧳 ${typedLabelRaw}`;
-        });
+  return clean || 'general';
+}
 
-        if (els.modeEditorSelect) els.modeEditorSelect.value = nextKey;
+function prettifyCategory(value) {
+  const clean = normalizeCatId(value).replace(/[-_]+/g, ' ');
 
-        fx.toast?.('Lista actualizada ✅');
-        fx.haptic?.(10);
-        scheduleRender('all');
-        return;
-      }
+  return clean
+    .split(/\s+/)
+    .filter(Boolean)
+    .map((part) => part.charAt(0).toUpperCase() + part.slice(1))
+    .join(' ') || 'General';
+}
 
-      applyDataMutator((data) => {
-        ensureModeInitialized(data, nextKey, {
-          templateMode: baseMode,
-          label: `🧳 ${typedLabelRaw}`
-        });
+function slugifyListName(value) {
+  const raw = ensureString(value, 80).toLowerCase();
 
-        data.modes[nextKey].label = `🧳 ${typedLabelRaw}`;
+  const clean = raw
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/[^a-z0-9\s_-]/g, '')
+    .replace(/\s+/g, '-')
+    .replace(/-+/g, '-')
+    .replace(/^[-_]+|[-_]+$/g, '');
 
-        const sourceItems = Array.isArray(data.itemsByMode[baseMode]) ? data.itemsByMode[baseMode] : [];
-        if (!Array.isArray(data.itemsByMode[nextKey]) || data.itemsByMode[nextKey].length === 0) {
-          data.itemsByMode[nextKey] = sourceItems.map((it) => ({
-            ...cloneItem(it),
-            id: uid(),
-            done: false
-          }));
-        }
+  return clean || 'lista';
+}
 
-        const sourceCats = Array.isArray(data.catsByMode[baseMode]) ? data.catsByMode[baseMode] : [];
-        if (!Array.isArray(data.catsByMode[nextKey]) || data.catsByMode[nextKey].length === 0) {
-          data.catsByMode[nextKey] = sourceCats.map((cat) => ({ ...cat }));
-        }
+function clone(value) {
+  try {
+    return JSON.parse(JSON.stringify(value));
+  } catch {
+    return {};
+  }
+}
 
-        data.completedOnceByMode[nextKey] = false;
-        data.__completedOnceByMode[nextKey] = false;
-      });
+function escapeHtml(text = '') {
+  return String(text)
+    .replaceAll('&', '&amp;')
+    .replaceAll('<', '&lt;')
+    .replaceAll('>', '&gt;')
+    .replaceAll('"', '&quot;')
+    .replaceAll("'", '&#039;');
+}
 
-      if (els.modeEditorSelect) els.modeEditorSelect.value = nextKey;
+function escapeHtmlAttr(text = '') {
+  return escapeHtml(text);
+}
 
-      fx.toast?.('Lista creada ✅');
-      fx.haptic?.(10);
-      scheduleRender('all');
-    }, 'create-mode');
+function fillListSelect(selectEl, lists, selected = '') {
+  if (!selectEl) return;
 
-    bindOnce(els.btnDeleteMode, 'click', () => {
-      const key = normalizeModeKey(els.modeEditorSelect?.value || getCurrentMode());
-      const modes = getModesEntries(store.getState());
+  const currentValue = ensureString(selected, 120);
 
-      if (modes.length <= 1) {
-        fx.toast?.('Tiene que quedar al menos una lista 😌');
-        fx.haptic?.(14);
-        return;
-      }
+  const html = (Array.isArray(lists) ? lists : []).map(({ key, label, icon }) => {
+    const isSelected = key === currentValue ? ' selected' : '';
+    return `<option value="${escapeHtmlAttr(key)}"${isSelected}>${escapeHtml(`${icon || '🧾'} ${label}`)}</option>`;
+  }).join('');
 
-      const fallbackKey = modes.find((m) => m.key !== key)?.key || 'salida';
+  if (selectEl.innerHTML !== html) {
+    selectEl.innerHTML = html;
+  }
 
-      applyDataMutator((data) => {
-        delete data.modes[key];
-        delete data.itemsByMode[key];
-        delete data.catsByMode[key];
-        delete data.completedOnceByMode[key];
-        delete data.__completedOnceByMode[key];
-      });
-
-      const st = store.getState();
-      const current = getCurrentMode();
-
-      if (current === key) {
-        if (actions.changeMode) {
-          actions.changeMode(fallbackKey);
-        } else {
-          store.setState({
-            settings: {
-              ...st.settings,
-              tripMode: fallbackKey
-            }
-          });
-        }
-      }
-
-      if (els.modeEditorSelect) els.modeEditorSelect.value = fallbackKey;
-
-      fx.toast?.('Lista eliminada 🗑️');
-      fx.haptic?.(10);
-      scheduleRender('all');
-    }, 'delete-mode');
+  if (currentValue && selectEl.value !== currentValue) {
+    selectEl.value = currentValue;
   }
 }

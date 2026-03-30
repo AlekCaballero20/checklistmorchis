@@ -1,1351 +1,1367 @@
-/* =============================================================================
-  /src/actions.js — App actions (domain logic) — PRO v6.0
-  - ✅ NO DOM manipulation inside
-  - ✅ Multi-mode robusto + backward compatible
-  - ✅ Soporta:
-      toggleDone / deleteItem / resetChecks / setAll / createItem
-      editItem / duplicateItem / moveItem
-      assignItemToModes / toggleItemMode / setItemModes
-      changeMode / wipeAll / onCompletedOnce
-      createMode / renameMode / updateMode / deleteMode / duplicateMode / openModeEditor
-  - ✅ Compat con data shape viejo y nuevo
-  - ✅ Unifica completedOnceByMode / __completedOnceByMode
-  - ✅ createItem({ targetMode }) crea en la lista elegida
-  - ✅ assignItemToModes agrega a otras listas sin romper el item origen
-  - ✅ Menos sorpresas con setState y saveData/saveSettings
-============================================================================= */
-
 'use strict';
 
-/**
- * Factory: createActions
- * @param {Object} params
- * @param {Function} params.getState   () => state
- * @param {Function} params.setState   (partial | updaterFn, options?) => void
- * @param {Object} params.deps
- */
-export function createActions({ getState, setState, deps = {} }) {
-  /* =========================
-     DEPS
-  ========================= */
-
-  const newPreset = deps.newPreset || ((m) => ({
-    version: 3,
-    mode: m,
-    cats: [],
-    items: [],
-    completedOnceByMode: { [m]: false }
-  }));
-
+export function createActions({ getState, setState, deps = {} } = {}) {
+  const saveState = typeof deps.saveState === 'function' ? deps.saveState : () => {};
   const saveSettings = typeof deps.saveSettings === 'function' ? deps.saveSettings : () => {};
-  const saveData = typeof deps.saveData === 'function' ? deps.saveData : () => {};
-  const uidFn = typeof deps.uid === 'function' ? deps.uid : null;
+  const uid = typeof deps.uid === 'function' ? deps.uid : null;
 
   const toast = typeof deps.toast === 'function' ? deps.toast : null;
   const haptic = typeof deps.haptic === 'function' ? deps.haptic : null;
   const tickSound = typeof deps.tickSound === 'function' ? deps.tickSound : null;
-  const confetti = typeof deps.confetti === 'function' ? deps.confetti : null;
 
-  const safeToast = (msg) => { try { toast?.(msg); } catch {} };
-  const safeHaptic = (ms) => { try { haptic?.(ms); } catch {} };
-  const safeTick = () => { try { tickSound?.(); } catch {} };
-  const safeConfetti = () => { try { confetti?.(); } catch {} };
+  const DEFAULT_LIST_NAME = 'Mi lista';
+  const DEFAULT_LIST_ICON = '🧾';
+  const DEFAULT_CATEGORY = 'general';
+  const DEFAULT_SETTINGS = {
+    motion: true,
+    sound: true,
+    streak: 0
+  };
 
-  /* =========================
-     SMALL UTILS
-  ========================= */
+  /* ==========================================================================
+    SAFE SIDE EFFECTS
+  ========================================================================== */
 
-  function ensureString(v, maxLen = 80) {
-    const s = String(v ?? '').trim();
-    return maxLen ? s.slice(0, maxLen) : s;
+  function safeToast(message) {
+    try { toast?.(message); } catch {}
   }
 
-  function isPlainObject(v) {
-    return v != null && typeof v === 'object' &&
-      (v.constructor === Object || Object.getPrototypeOf(v) === Object.prototype);
+  function safeHaptic(ms = 10) {
+    try { haptic?.(ms); } catch {}
   }
 
-  function uniq(arr) {
-    const out = [];
-    const seen = new Set();
-
-    for (const x of arr || []) {
-      const k = String(x || '').trim();
-      if (!k || seen.has(k)) continue;
-      seen.add(k);
-      out.push(k);
-    }
-    return out;
+  function safeTick() {
+    try { tickSound?.(); } catch {}
   }
 
-  function slugifyModeKey(v) {
-    const raw = ensureString(v, 60).toLowerCase();
-
-    const s = raw
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-z0-9\s_-]/g, '')
-      .replace(/\s+/g, '-')
-      .replace(/-+/g, '-')
-      .replace(/^[-_]+|[-_]+$/g, '');
-
-    return s || 'modo';
-  }
-
-  function slugifyCatKey(v) {
-    const raw = ensureString(v, 40).toLowerCase();
-
-    const s = raw
-      .normalize('NFD')
-      .replace(/[\u0300-\u036f]/g, '')
-      .replace(/[^a-z0-9\s_-]/g, '')
-      .replace(/\s+/g, '-')
-      .replace(/-+/g, '-')
-      .replace(/^[-_]+|[-_]+$/g, '');
-
-    return s || 'otros';
-  }
-
-  function normalizeEmoji(v) {
-    const e = ensureString(v, 8);
-    return e ? e : null;
-  }
-
-  function makeId() {
-    if (uidFn) return String(uidFn());
-    return `${Math.random().toString(16).slice(2)}${Date.now().toString(16)}`;
-  }
+  /* ==========================================================================
+    GENERIC HELPERS
+  ========================================================================== */
 
   function nowIso() {
-    try { return new Date().toISOString(); } catch { return ''; }
-  }
-
-  function snap() {
-    try { return getState?.() || {}; } catch { return {}; }
-  }
-
-  function getActiveMode(state) {
-    return String(state?.settings?.tripMode || state?.data?.mode || 'salida');
-  }
-
-  function findIndexById(items, id) {
-    if (!Array.isArray(items)) return -1;
-    return items.findIndex(x => x && String(x.id) === String(id));
-  }
-
-  function shallowClone(v) {
-    return JSON.parse(JSON.stringify(v));
-  }
-
-  function commitState(updater) {
-    if (typeof setState !== 'function') return;
-
     try {
-      setState(updater);
-      return;
-    } catch {}
+      return new Date().toISOString();
+    } catch {
+      return '';
+    }
+  }
 
+  function ensureString(value, maxLen = 100) {
+    const out = String(value ?? '').trim();
+    return maxLen > 0 ? out.slice(0, maxLen) : out;
+  }
+
+  function isPlainObject(value) {
+    return (
+      value != null &&
+      typeof value === 'object' &&
+      (value.constructor === Object || Object.getPrototypeOf(value) === Object.prototype)
+    );
+  }
+
+  function clone(value) {
     try {
-      const prev = snap();
-      const next = typeof updater === 'function' ? updater(prev) : updater;
-      if (next && typeof next === 'object') {
-        setState(next);
-      }
-    } catch {}
-  }
-
-  /* =========================
-     NORMALIZERS
-  ========================= */
-
-  function repairCat_(cat) {
-    if (typeof cat === 'string') {
-      const key = slugifyCatKey(cat);
-      const label = key === 'otros' ? 'Otros' : ensureString(cat, 60) || key;
-      return {
-        id: key,
-        key,
-        name: label,
-        label,
-        emoji: key === 'otros' ? '✨' : null
-      };
+      return JSON.parse(JSON.stringify(value));
+    } catch {
+      return {};
     }
-
-    if (isPlainObject(cat)) {
-      const key = slugifyCatKey(cat.key || cat.id || cat.slug || cat.name || 'otros');
-      const label = ensureString(cat.label || cat.name || key || 'Otros', 60) || 'Otros';
-
-      return {
-        ...cat,
-        id: key,
-        key,
-        name: label,
-        label,
-        emoji: normalizeEmoji(cat.emoji)
-      };
-    }
-
-    return {
-      id: 'otros',
-      key: 'otros',
-      name: 'Otros',
-      label: 'Otros',
-      emoji: '✨'
-    };
   }
 
-  function repairItem_(it) {
-    const repairedModes = Array.isArray(it?.modes)
-      ? uniq(it.modes.map(x => ensureString(x, 24)).filter(Boolean)).map(slugifyModeKey)
-      : null;
-
-    return {
-      id: ensureString(it?.id || makeId(), 140),
-      cat: slugifyCatKey(it?.cat || 'otros'),
-      name: ensureString(it?.name || 'Sin nombre', 80) || 'Sin nombre',
-      emoji: it?.emoji ? normalizeEmoji(it.emoji) : null,
-      done: !!it?.done,
-      modes: repairedModes?.length ? repairedModes : null,
-      originId: it?.originId ? ensureString(it.originId, 140) : null
-    };
+  function clampInt(value, min, max) {
+    const n = Number(value);
+    if (!Number.isFinite(n)) return min;
+    const i = Math.floor(n);
+    return Math.min(max, Math.max(min, i));
   }
 
-  function repairModeMeta_(key, meta = {}) {
-    const fixedKey = slugifyModeKey(key || meta?.key || meta?.name || 'modo');
-    const cleanName = ensureString(meta?.name || stripLeadingEmoji(meta?.label) || fixedKey, 60) || fixedKey;
-    const cleanLabel = ensureString(meta?.label || `🧳 ${cleanName}`, 60) || `🧳 ${cleanName}`;
-
-    return {
-      key: fixedKey,
-      name: cleanName,
-      label: cleanLabel,
-      icon: normalizeEmoji(meta?.icon),
-      createdAt: ensureString(meta?.createdAt || '', 60) || nowIso(),
-      updatedAt: ensureString(meta?.updatedAt || '', 60) || nowIso()
-    };
+  function normalizeEmoji(value) {
+    const clean = ensureString(value, 16);
+    return clean || null;
   }
 
-  function stripLeadingEmoji(text = '') {
-    return String(text)
-      .replace(/^[^\p{L}\p{N}]+/u, '')
+  function normalizeText(value) {
+    return ensureString(value, 200)
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/\s+/g, ' ')
       .trim();
   }
 
-  /* =========================
-     DATA SHAPE
-  ========================= */
+  function sanitizeCategory(value) {
+    const clean = ensureString(value, 60)
+      .toLowerCase()
+      .normalize('NFD')
+      .replace(/[\u0300-\u036f]/g, '')
+      .replace(/[^a-z0-9\s_-]/g, '')
+      .replace(/\s+/g, '-')
+      .replace(/-+/g, '-')
+      .replace(/^[-_]+|[-_]+$/g, '');
 
-  function ensureModesMap_(data, activeMode) {
-    const currentMode = slugifyModeKey(data?.mode || activeMode || 'salida');
-    const raw = isPlainObject(data?.modes) ? data.modes : {};
-    const out = {};
+    return clean || DEFAULT_CATEGORY;
+  }
 
-    for (const [k, v] of Object.entries(raw)) {
-      const meta = repairModeMeta_(k, v);
-      out[meta.key] = meta;
-    }
+  function sanitizeListName(value) {
+    return ensureString(value, 80) || DEFAULT_LIST_NAME;
+  }
 
-    const itemModes = isPlainObject(data?.itemsByMode) ? Object.keys(data.itemsByMode) : [];
-    const catModes = isPlainObject(data?.catsByMode) ? Object.keys(data.catsByMode) : [];
-    const modeKeys = uniq([currentMode, ...itemModes, ...catModes, ...Object.keys(out)]);
-
-    for (const mk of modeKeys) {
-      const sk = slugifyModeKey(mk);
-      if (!out[sk]) {
-        out[sk] = repairModeMeta_(sk, { name: sk, label: `🧳 ${stripLeadingEmoji(sk) || sk}` });
+  function makeId(prefix = 'id') {
+    try {
+      if (uid) {
+        const external = String(uid()).trim();
+        if (external) return external;
       }
+    } catch {}
+
+    return `${prefix}_${Math.random().toString(16).slice(2)}${Date.now().toString(16)}`;
+  }
+
+  function normalizeSettings(raw = {}) {
+    return {
+      motion: Object.prototype.hasOwnProperty.call(raw || {}, 'motion')
+        ? !!raw.motion
+        : DEFAULT_SETTINGS.motion,
+      sound: Object.prototype.hasOwnProperty.call(raw || {}, 'sound')
+        ? !!raw.sound
+        : DEFAULT_SETTINGS.sound,
+      streak: clampInt(raw?.streak, 0, 999999)
+    };
+  }
+
+  /* ==========================================================================
+    RECORD FACTORIES
+  ========================================================================== */
+
+  function createListRecord({ name, icon, id, createdAt, updatedAt } = {}) {
+    const now = nowIso();
+    const existingId = ensureString(id, 120);
+
+    return {
+      id: existingId || makeId('list'),
+      name: sanitizeListName(name),
+      icon: normalizeEmoji(icon) || DEFAULT_LIST_ICON,
+      createdAt: ensureString(createdAt, 40) || now,
+      updatedAt: ensureString(updatedAt, 40) || now
+    };
+  }
+
+  function createItemRecord(partial = {}) {
+    const now = nowIso();
+    const existingId = ensureString(partial.id, 120);
+
+    return {
+      id: existingId || makeId('item'),
+      text: ensureString(
+        partial.text ?? partial.name ?? partial.title ?? '',
+        180
+      ) || 'Nuevo ítem',
+      checked: !!(partial.checked ?? partial.done),
+      category: sanitizeCategory(
+        partial.category ?? partial.cat ?? DEFAULT_CATEGORY
+      ),
+      emoji: normalizeEmoji(partial.emoji),
+      notes: ensureString(partial.notes, 500) || '',
+      createdAt: ensureString(partial.createdAt, 40) || now,
+      updatedAt: ensureString(partial.updatedAt, 40) || now
+    };
+  }
+
+  /* ==========================================================================
+    STATE REPAIR
+  ========================================================================== */
+
+  function repairList(list) {
+    if (!isPlainObject(list)) return null;
+
+    return createListRecord({
+      id: list.id,
+      name: list.name ?? list.label ?? list.title,
+      icon: list.icon,
+      createdAt: list.createdAt,
+      updatedAt: list.updatedAt
+    });
+  }
+
+  function repairItems(items) {
+    const source = Array.isArray(items) ? items : [];
+    const out = [];
+    const seen = new Set();
+
+    for (const raw of source) {
+      if (!isPlainObject(raw)) continue;
+
+      const item = createItemRecord(raw);
+
+      if (!item.id || seen.has(item.id)) {
+        item.id = makeId('item');
+      }
+
+      seen.add(item.id);
+      out.push(item);
     }
 
     return out;
   }
 
-  function readCompletedMap_(data, mode) {
-    const legacy = isPlainObject(data?.__completedOnceByMode) ? data.__completedOnceByMode : {};
-    const modern = isPlainObject(data?.completedOnceByMode) ? data.completedOnceByMode : {};
-    const merged = { ...legacy, ...modern };
+  function ensureAtLeastOneList(state) {
+    const next = {
+      version: Number(state?.version) || 1,
+      savedAt: nowIso(),
+      currentListId: state?.currentListId || null,
+      settings: normalizeSettings(state?.settings),
+      lists: Array.isArray(state?.lists) ? [...state.lists] : [],
+      itemsByListId: isPlainObject(state?.itemsByListId) ? { ...state.itemsByListId } : {}
+    };
 
-    if (!(mode in merged)) merged[mode] = !!data?.__completedOnce || false;
-    return merged;
+    if (next.lists.length > 0) {
+      if (!next.currentListId || !next.lists.some((list) => list.id === next.currentListId)) {
+        next.currentListId = next.lists[0].id;
+      }
+
+      for (const list of next.lists) {
+        if (!Array.isArray(next.itemsByListId[list.id])) {
+          next.itemsByListId[list.id] = [];
+        }
+      }
+
+      return next;
+    }
+
+    const firstList = createListRecord({
+      name: DEFAULT_LIST_NAME,
+      icon: DEFAULT_LIST_ICON
+    });
+
+    next.lists = [firstList];
+    next.currentListId = firstList.id;
+    next.itemsByListId[firstList.id] = [];
+
+    return next;
   }
 
-  function ensureDataShape_(data, activeMode) {
-    const mode = slugifyModeKey(data?.mode || activeMode || 'salida');
-    const basePreset = newPreset(mode) || {};
+  function repairStateShape(rawState) {
+    const base = isPlainObject(rawState) ? rawState : {};
+    const lists = [];
+    const seenListIds = new Set();
 
-    const cats =
-      Array.isArray(data?.cats) ? data.cats
-      : Array.isArray(basePreset.cats) ? basePreset.cats
-      : [];
+    for (const rawList of Array.isArray(base.lists) ? base.lists : []) {
+      const fixed = repairList(rawList);
+      if (!fixed) continue;
+      if (!fixed.id) continue;
+      if (seenListIds.has(fixed.id)) continue;
 
-    let itemsByMode = {};
-    let catsByMode = {};
-    let doneByMode = {};
-
-    if (isPlainObject(data?.itemsByMode)) {
-      itemsByMode = { ...data.itemsByMode };
-      catsByMode = isPlainObject(data?.catsByMode) ? { ...data.catsByMode } : {};
-      doneByMode = readCompletedMap_(data, mode);
-    } else {
-      const legacyItems =
-        Array.isArray(data?.items) ? data.items
-        : Array.isArray(basePreset.items) ? basePreset.items
-        : [];
-
-      itemsByMode = { [mode]: legacyItems };
-      catsByMode = { [mode]: cats };
-      doneByMode = { [mode]: !!data?.__completedOnce };
+      seenListIds.add(fixed.id);
+      lists.push(fixed);
     }
 
-    const normalizedItemsByMode = {};
-    for (const [mk, arr] of Object.entries(itemsByMode)) {
-      const cleanMode = slugifyModeKey(mk);
-      normalizedItemsByMode[cleanMode] = Array.isArray(arr) ? arr.map(repairItem_) : [];
+    const rawItemsByListId = isPlainObject(base.itemsByListId) ? base.itemsByListId : {};
+    const itemsByListId = {};
+
+    for (const list of lists) {
+      itemsByListId[list.id] = repairItems(rawItemsByListId[list.id]);
     }
 
-    const normalizedCatsByMode = {};
-    for (const [mk, arr] of Object.entries(catsByMode)) {
-      const cleanMode = slugifyModeKey(mk);
-      normalizedCatsByMode[cleanMode] = Array.isArray(arr) ? ensureCatsContainOtros_(arr.map(repairCat_)) : [];
+    let currentListId = ensureString(base.currentListId, 120) || null;
+    if (!currentListId || !lists.some((list) => list.id === currentListId)) {
+      currentListId = lists[0]?.id || null;
     }
 
-    if (!Array.isArray(normalizedItemsByMode[mode])) {
-      normalizedItemsByMode[mode] = [];
-    }
+    return ensureAtLeastOneList({
+      version: Number(base.version) || 1,
+      savedAt: nowIso(),
+      currentListId,
+      settings: normalizeSettings(base.settings),
+      lists,
+      itemsByListId
+    });
+  }
 
-    if (!Array.isArray(normalizedCatsByMode[mode])) {
-      normalizedCatsByMode[mode] = ensureCatsContainOtros_(
-        Array.isArray(cats) ? cats.map(repairCat_) : []
-      );
+  function snapshot() {
+    try {
+      return repairStateShape(getState?.() || {});
+    } catch {
+      return ensureAtLeastOneList({
+        version: 1,
+        savedAt: nowIso(),
+        currentListId: null,
+        settings: DEFAULT_SETTINGS,
+        lists: [],
+        itemsByListId: {}
+      });
     }
+  }
 
-    const modes = ensureModesMap_({
-      ...data,
-      mode,
-      itemsByMode: normalizedItemsByMode,
-      catsByMode: normalizedCatsByMode
-    }, mode);
+  /* ==========================================================================
+    STATE ACCESS
+  ========================================================================== */
 
-    const completedOnceByMode = {};
-    for (const mk of Object.keys(modes)) {
-      completedOnceByMode[mk] = !!doneByMode[mk];
-    }
+  function getCurrentList(state = null) {
+    const s = state ? repairStateShape(state) : snapshot();
+    return s.lists.find((list) => list.id === s.currentListId) || null;
+  }
+
+  function getCurrentListId(state = null) {
+    return getCurrentList(state)?.id || null;
+  }
+
+  function getCurrentItems(state = null) {
+    const s = state ? repairStateShape(state) : snapshot();
+    const listId = getCurrentListId(s);
+    if (!listId) return [];
+    return Array.isArray(s.itemsByListId[listId]) ? s.itemsByListId[listId] : [];
+  }
+
+  function findListById(state, listId) {
+    const cleanId = ensureString(listId, 120);
+    return state.lists.find((list) => list.id === cleanId) || null;
+  }
+
+  function findListIndexById(state, listId) {
+    const cleanId = ensureString(listId, 120);
+    return state.lists.findIndex((list) => list.id === cleanId);
+  }
+
+  function findListByName(state, name, ignoreId = '') {
+    const wanted = normalizeText(name);
+    if (!wanted) return null;
+
+    return state.lists.find((list) => {
+      if (ignoreId && list.id === ignoreId) return false;
+      return normalizeText(list.name) === wanted;
+    }) || null;
+  }
+
+  function findItemIndexById(items, itemId) {
+    const cleanId = ensureString(itemId, 120);
+    return Array.isArray(items)
+      ? items.findIndex((item) => item && item.id === cleanId)
+      : -1;
+  }
+
+  function getListItems(state, listId) {
+    const cleanId = ensureString(listId, 120);
+    if (!cleanId) return [];
+    return Array.isArray(state.itemsByListId[cleanId]) ? state.itemsByListId[cleanId] : [];
+  }
+
+  function getCompletionMeta(items = []) {
+    const total = Array.isArray(items) ? items.length : 0;
+    const checkedCount = total
+      ? items.filter((item) => !!item?.checked).length
+      : 0;
 
     return {
-      version: 3,
-      mode,
-      cats: ensureCatsContainOtros_(Array.isArray(cats) ? cats.map(repairCat_) : []),
-      catsByMode: normalizedCatsByMode,
-      itemsByMode: normalizedItemsByMode,
-      modes,
-      completedOnceByMode,
-      __completedOnceByMode: { ...completedOnceByMode }
+      total,
+      checkedCount,
+      completed: total > 0 && checkedCount === total
     };
   }
 
-  function getModeItems_(data, mode) {
-    const m = slugifyModeKey(mode || data?.mode || 'salida');
-    if (isPlainObject(data?.itemsByMode) && Array.isArray(data.itemsByMode[m])) return data.itemsByMode[m];
-    return [];
-  }
-
-  function setModeItems_(data, mode, items) {
-    const m = slugifyModeKey(mode || data?.mode || 'salida');
-    if (!isPlainObject(data.itemsByMode)) data.itemsByMode = {};
-    data.itemsByMode[m] = Array.isArray(items) ? items.map(repairItem_) : [];
-  }
-
-  function getModeCats_(data, mode) {
-    const m = slugifyModeKey(mode || data?.mode || 'salida');
-    if (isPlainObject(data?.catsByMode) && Array.isArray(data.catsByMode[m])) return data.catsByMode[m];
-    if (Array.isArray(data?.cats)) return data.cats;
-    return [];
-  }
-
-  function setModeCats_(data, mode, cats) {
-    const m = slugifyModeKey(mode || data?.mode || 'salida');
-    if (!isPlainObject(data.catsByMode)) data.catsByMode = {};
-    data.catsByMode[m] = ensureCatsContainOtros_(Array.isArray(cats) ? cats.map(repairCat_) : []);
-  }
-
-  function getCompletedFlag_(data, mode) {
-    const m = slugifyModeKey(mode || data?.mode || 'salida');
-    const modern = isPlainObject(data?.completedOnceByMode) ? data.completedOnceByMode : {};
-    const legacy = isPlainObject(data?.__completedOnceByMode) ? data.__completedOnceByMode : {};
-    return !!(modern[m] ?? legacy[m] ?? false);
-  }
-
-  function setCompletedFlag_(data, mode, val) {
-    const m = slugifyModeKey(mode || data?.mode || 'salida');
-    if (!isPlainObject(data.completedOnceByMode)) data.completedOnceByMode = {};
-    if (!isPlainObject(data.__completedOnceByMode)) data.__completedOnceByMode = {};
-    data.completedOnceByMode[m] = !!val;
-    data.__completedOnceByMode[m] = !!val;
-  }
-
-  function ensureModeMeta_(data, mode, extra = {}) {
-    const m = slugifyModeKey(mode || data?.mode || 'salida');
-    if (!isPlainObject(data.modes)) data.modes = {};
-
-    const prev = data.modes[m] || repairModeMeta_(m, { name: m, label: `🧳 ${m}` });
-    const nextMeta = repairModeMeta_(m, {
-      ...prev,
-      ...extra,
-      updatedAt: nowIso()
-    });
-
-    data.modes[m] = nextMeta;
-    return nextMeta;
-  }
-
-  function ensureCatsContainOtros_(cats) {
-    const list = Array.isArray(cats) ? cats.map(repairCat_) : [];
-    const exists = list.some(c => ensureString(c?.key || c?.id || '', 40) === 'otros');
-    if (exists) return list;
-
-    return [
+  function touchList(list) {
+    return {
       ...list,
-      { id: 'otros', key: 'otros', name: 'Otros', label: 'Otros', emoji: '✨' }
-    ];
+      updatedAt: nowIso()
+    };
   }
 
-  function ensureModeInitialized_(data, mode) {
-    const m = slugifyModeKey(mode || data?.mode || 'salida');
+  /* ==========================================================================
+    COMMIT
+  ========================================================================== */
 
-    if (!isPlainObject(data.itemsByMode)) data.itemsByMode = {};
-    if (!isPlainObject(data.catsByMode)) data.catsByMode = {};
+  function commit(mutator, options = {}) {
+    const persist = options.persist !== false;
+    const previous = snapshot();
+    const draft = clone(previous);
+    const mutated = mutator(draft) || draft;
+    const nextState = repairStateShape(mutated);
 
-    if (!Array.isArray(data.itemsByMode[m])) {
-      const p = newPreset(m) || {};
-      const presetItems = Array.isArray(p.items) ? p.items.map(repairItem_) : [];
-      data.itemsByMode[m] = presetItems;
-    } else {
-      data.itemsByMode[m] = data.itemsByMode[m].map(repairItem_);
+    try {
+      setState?.(nextState);
+    } catch {}
+
+    if (persist) {
+      try {
+        saveState(nextState);
+      } catch {}
     }
 
-    if (!Array.isArray(data.catsByMode[m])) {
-      const p = newPreset(m) || {};
-      const presetCats = Array.isArray(p.cats) ? p.cats.map(repairCat_) : [];
-      data.catsByMode[m] = ensureCatsContainOtros_(
-        presetCats.length ? presetCats : (Array.isArray(data.cats) ? data.cats : [])
-      );
-    } else {
-      data.catsByMode[m] = ensureCatsContainOtros_(data.catsByMode[m]);
-    }
-
-    if (!isPlainObject(data.completedOnceByMode)) data.completedOnceByMode = {};
-    if (!isPlainObject(data.__completedOnceByMode)) data.__completedOnceByMode = {};
-
-    if (!(m in data.completedOnceByMode)) data.completedOnceByMode[m] = false;
-    if (!(m in data.__completedOnceByMode)) data.__completedOnceByMode[m] = !!data.completedOnceByMode[m];
-
-    ensureModeMeta_(data, m);
+    return nextState;
   }
 
-  function getAllModeKeys_(data) {
-    const modeKeys = new Set();
-
-    if (isPlainObject(data?.itemsByMode)) {
-      for (const k of Object.keys(data.itemsByMode)) modeKeys.add(String(k));
-    }
-
-    if (isPlainObject(data?.catsByMode)) {
-      for (const k of Object.keys(data.catsByMode)) modeKeys.add(String(k));
-    }
-
-    if (isPlainObject(data?.modes)) {
-      for (const k of Object.keys(data.modes)) modeKeys.add(String(k));
-    }
-
-    if (data?.mode) modeKeys.add(String(data.mode));
-
-    return Array.from(modeKeys).map(slugifyModeKey);
-  }
-
-  function canDeleteMode_(data, mode) {
-    const keys = getAllModeKeys_(data);
-    return keys.length > 1 && keys.includes(mode);
-  }
-
-  function ensureCatExistsInMode_(data, mode, catKey, fallbackLabel = null) {
-    const m = slugifyModeKey(mode);
-    const cleanCat = slugifyCatKey(catKey);
-    ensureModeInitialized_(data, m);
-
-    const cats = getModeCats_(data, m);
-    const exists = cats.some(c => ensureString(c?.key || c?.id || '', 40) === cleanCat);
-    if (exists) return;
-
-    cats.push(repairCat_({
-      key: cleanCat,
-      id: cleanCat,
-      label: fallbackLabel || cleanCat,
-      name: fallbackLabel || cleanCat,
-      emoji: cleanCat === 'otros' ? '✨' : null
-    }));
-
-    setModeCats_(data, m, cats);
-  }
-
-  /**
-   * updateData(mutator, opts?)
-   */
-  function updateData(mutator, opts = {}) {
-    const doSave = opts.save !== false;
-
-    commitState((s) => {
-      const activeMode = getActiveMode(s);
-      const next = { ...s };
-
-      const shaped = ensureDataShape_(s.data, activeMode);
-
-      next.data = {
-        ...shaped,
-        cats: shaped.cats.map(c => ({ ...c })),
-        catsByMode: Object.fromEntries(
-          Object.entries(shaped.catsByMode || {}).map(([k, arr]) => [k, arr.map(c => ({ ...c }))])
-        ),
-        itemsByMode: Object.fromEntries(
-          Object.entries(shaped.itemsByMode || {}).map(([k, arr]) => [k, arr.map(i => ({ ...i }))])
-        ),
-        modes: Object.fromEntries(
-          Object.entries(shaped.modes || {}).map(([k, meta]) => [k, { ...meta }])
-        ),
-        completedOnceByMode: { ...(shaped.completedOnceByMode || {}) },
-        __completedOnceByMode: { ...(shaped.__completedOnceByMode || shaped.completedOnceByMode || {}) }
-      };
-
-      ensureModeInitialized_(next.data, activeMode);
-      mutator(next, { mode: activeMode });
-
-      return next;
+  function commitSettings(mutator) {
+    const nextState = commit((draft) => {
+      draft.settings = normalizeSettings(draft.settings);
+      mutator(draft.settings, draft);
+      draft.savedAt = nowIso();
+      return draft;
     });
 
-    if (doSave) saveData();
+    try {
+      saveSettings(nextState.settings);
+    } catch {}
+
+    return nextState;
   }
 
-  function updateSettings(mutator) {
-    commitState((s) => {
-      const next = { ...s, settings: { ...(s.settings || {}) } };
-      mutator(next);
-      return next;
-    });
-    saveSettings();
-  }
+  /* ==========================================================================
+    ITEMS
+  ========================================================================== */
 
-  /* =========================
-     CORE
-  ========================= */
-
-  function toggleDone(id) {
-    const cleanId = ensureString(id, 140);
+  function toggleDone(itemId) {
+    const cleanId = ensureString(itemId, 120);
     if (!cleanId) return { ok: false, reason: 'BAD_ID' };
 
-    let ok = false;
+    let found = false;
+    let nextChecked = false;
+    let activeListId = null;
 
-    updateData((next, ctx) => {
-      const items = getModeItems_(next.data, ctx.mode);
-      const idx = findIndexById(items, cleanId);
-      if (idx < 0) return;
+    const nextState = commit((draft) => {
+      const listId = draft.currentListId;
+      activeListId = listId;
 
-      items[idx] = { ...items[idx], done: !items[idx].done };
-      setModeItems_(next.data, ctx.mode, items);
-      setCompletedFlag_(next.data, ctx.mode, false);
-      ok = true;
+      const items = Array.isArray(draft.itemsByListId[listId])
+        ? [...draft.itemsByListId[listId]]
+        : [];
+
+      const index = findItemIndexById(items, cleanId);
+      if (index < 0) return draft;
+
+      const current = items[index];
+      nextChecked = !current.checked;
+
+      items[index] = {
+        ...current,
+        checked: nextChecked,
+        updatedAt: nowIso()
+      };
+
+      draft.itemsByListId[listId] = items;
+      draft.lists = draft.lists.map((list) =>
+        list.id === listId ? touchList(list) : list
+      );
+
+      found = true;
+      return draft;
     });
 
-    if (!ok) return { ok: false, reason: 'NOT_FOUND' };
+    if (!found) {
+      return { ok: false, reason: 'NOT_FOUND' };
+    }
 
-    const s = snap();
-    if (s?.settings?.sound) safeTick();
-    safeHaptic(12);
+    if (nextState.settings.sound) {
+      safeTick();
+    }
+
+    safeHaptic(10);
+
+    const items = getListItems(nextState, activeListId);
+    const completion = getCompletionMeta(items);
+
+    return {
+      ok: true,
+      checked: nextChecked,
+      listId: activeListId,
+      ...completion
+    };
+  }
+
+  function createItem(payload = {}) {
+    const text = ensureString(payload.text ?? payload.name ?? payload.title, 180);
+    const targetListId = ensureString(payload.listId ?? payload.targetListId, 120);
+
+    if (!text) {
+      safeToast('Ponle nombre al ítem 🙃');
+      safeHaptic(16);
+      return { ok: false, reason: 'EMPTY_TEXT' };
+    }
+
+    let created = null;
+    let usedListId = null;
+
+    commit((draft) => {
+      const listId =
+        targetListId && findListById(draft, targetListId)
+          ? targetListId
+          : draft.currentListId;
+
+      const items = Array.isArray(draft.itemsByListId[listId])
+        ? [...draft.itemsByListId[listId]]
+        : [];
+
+      created = createItemRecord({
+        text,
+        checked: !!payload.checked,
+        category: payload.category ?? payload.cat,
+        emoji: payload.emoji,
+        notes: payload.notes
+      });
+
+      items.unshift(created);
+      draft.itemsByListId[listId] = items;
+      draft.lists = draft.lists.map((list) =>
+        list.id === listId ? touchList(list) : list
+      );
+
+      usedListId = listId;
+      return draft;
+    });
+
+    safeToast('Ítem agregado ✅');
+    safeHaptic(10);
+
+    return {
+      ok: true,
+      item: created,
+      itemId: created?.id || null,
+      listId: usedListId
+    };
+  }
+
+  function editItem(itemId, changes = {}) {
+    const cleanId = ensureString(itemId, 120);
+    if (!cleanId) return { ok: false, reason: 'BAD_ID' };
+
+    const hasText =
+      Object.prototype.hasOwnProperty.call(changes, 'text') ||
+      Object.prototype.hasOwnProperty.call(changes, 'name') ||
+      Object.prototype.hasOwnProperty.call(changes, 'title');
+
+    const nextText = hasText
+      ? ensureString(changes.text ?? changes.name ?? changes.title, 180)
+      : null;
+
+    if (hasText && !nextText) {
+      safeToast('Ponle nombre al ítem 🙃');
+      safeHaptic(16);
+      return { ok: false, reason: 'EMPTY_TEXT' };
+    }
+
+    let found = false;
+
+    commit((draft) => {
+      const listId = draft.currentListId;
+      const items = Array.isArray(draft.itemsByListId[listId])
+        ? [...draft.itemsByListId[listId]]
+        : [];
+
+      const index = findItemIndexById(items, cleanId);
+      if (index < 0) return draft;
+
+      const current = items[index];
+
+      items[index] = {
+        ...current,
+        ...(hasText ? { text: nextText } : {}),
+        ...(Object.prototype.hasOwnProperty.call(changes, 'checked')
+          ? { checked: !!changes.checked }
+          : {}),
+        ...(Object.prototype.hasOwnProperty.call(changes, 'done')
+          ? { checked: !!changes.done }
+          : {}),
+        ...(Object.prototype.hasOwnProperty.call(changes, 'category') ||
+        Object.prototype.hasOwnProperty.call(changes, 'cat')
+          ? { category: sanitizeCategory(changes.category ?? changes.cat) }
+          : {}),
+        ...(Object.prototype.hasOwnProperty.call(changes, 'emoji')
+          ? { emoji: normalizeEmoji(changes.emoji) }
+          : {}),
+        ...(Object.prototype.hasOwnProperty.call(changes, 'notes')
+          ? { notes: ensureString(changes.notes, 500) }
+          : {}),
+        updatedAt: nowIso()
+      };
+
+      draft.itemsByListId[listId] = items;
+      draft.lists = draft.lists.map((list) =>
+        list.id === listId ? touchList(list) : list
+      );
+
+      found = true;
+      return draft;
+    });
+
+    if (!found) return { ok: false, reason: 'NOT_FOUND' };
+
+    safeToast('Ítem actualizado ✨');
+    safeHaptic(8);
+
     return { ok: true };
   }
 
-  function deleteItem(id) {
-    const cleanId = ensureString(id, 140);
+  function deleteItem(itemId) {
+    const cleanId = ensureString(itemId, 120);
     if (!cleanId) return { ok: false, reason: 'BAD_ID' };
 
     let removed = false;
 
-    updateData((next, ctx) => {
-      const items = getModeItems_(next.data, ctx.mode);
-      const before = items.length;
-      const after = items.filter(x => x && x.id !== cleanId);
-      removed = before !== after.length;
+    commit((draft) => {
+      const listId = draft.currentListId;
+      const items = Array.isArray(draft.itemsByListId[listId])
+        ? draft.itemsByListId[listId]
+        : [];
 
-      setModeItems_(next.data, ctx.mode, after);
-      setCompletedFlag_(next.data, ctx.mode, false);
+      const filtered = items.filter((item) => item.id !== cleanId);
+      removed = filtered.length !== items.length;
+
+      if (!removed) return draft;
+
+      draft.itemsByListId[listId] = filtered;
+      draft.lists = draft.lists.map((list) =>
+        list.id === listId ? touchList(list) : list
+      );
+
+      return draft;
     });
 
     if (!removed) return { ok: false, reason: 'NOT_FOUND' };
 
-    safeToast('Item eliminado 🗑️');
+    safeToast('Ítem eliminado 🗑️');
     safeHaptic(10);
+
     return { ok: true };
+  }
+
+  function duplicateItem(itemId, options = {}) {
+    const cleanId = ensureString(itemId, 120);
+    if (!cleanId) return { ok: false, reason: 'BAD_ID' };
+
+    let duplicated = null;
+
+    commit((draft) => {
+      const sourceListId = draft.currentListId;
+      const targetListId =
+        ensureString(options.listId, 120) && findListById(draft, options.listId)
+          ? ensureString(options.listId, 120)
+          : sourceListId;
+
+      const sourceItems = Array.isArray(draft.itemsByListId[sourceListId])
+        ? draft.itemsByListId[sourceListId]
+        : [];
+
+      const sourceIndex = findItemIndexById(sourceItems, cleanId);
+      if (sourceIndex < 0) return draft;
+
+      const source = sourceItems[sourceIndex];
+      duplicated = createItemRecord({
+        text: source.text,
+        checked: false,
+        category: source.category,
+        emoji: source.emoji,
+        notes: source.notes
+      });
+
+      const targetItems = Array.isArray(draft.itemsByListId[targetListId])
+        ? [...draft.itemsByListId[targetListId]]
+        : [];
+
+      targetItems.unshift(duplicated);
+      draft.itemsByListId[targetListId] = targetItems;
+      draft.lists = draft.lists.map((list) =>
+        list.id === targetListId ? touchList(list) : list
+      );
+
+      return draft;
+    });
+
+    if (!duplicated) return { ok: false, reason: 'NOT_FOUND' };
+
+    safeToast('Ítem duplicado ✅');
+    safeHaptic(10);
+
+    return {
+      ok: true,
+      item: duplicated,
+      itemId: duplicated.id
+    };
+  }
+
+  function moveItem(itemId, targetCategory) {
+    return editItem(itemId, { category: targetCategory });
+  }
+
+  function moveItemToList(itemId, targetListId, options = {}) {
+    const cleanId = ensureString(itemId, 120);
+    const cleanTargetListId = ensureString(targetListId, 120);
+
+    if (!cleanId) return { ok: false, reason: 'BAD_ID' };
+    if (!cleanTargetListId) return { ok: false, reason: 'BAD_LIST_ID' };
+
+    let result = null;
+
+    commit((draft) => {
+      if (!findListById(draft, cleanTargetListId)) return draft;
+
+      const sourceListId =
+        ensureString(options.fromListId, 120) && findListById(draft, options.fromListId)
+          ? ensureString(options.fromListId, 120)
+          : draft.currentListId;
+
+      if (sourceListId === cleanTargetListId) return draft;
+
+      const sourceItems = Array.isArray(draft.itemsByListId[sourceListId])
+        ? [...draft.itemsByListId[sourceListId]]
+        : [];
+
+      const sourceIndex = findItemIndexById(sourceItems, cleanId);
+      if (sourceIndex < 0) return draft;
+
+      const [movedItem] = sourceItems.splice(sourceIndex, 1);
+
+      const targetItems = Array.isArray(draft.itemsByListId[cleanTargetListId])
+        ? [...draft.itemsByListId[cleanTargetListId]]
+        : [];
+
+      const finalItem = {
+        ...movedItem,
+        checked: !!options.keepChecked ? movedItem.checked : false,
+        updatedAt: nowIso()
+      };
+
+      targetItems.unshift(finalItem);
+
+      draft.itemsByListId[sourceListId] = sourceItems;
+      draft.itemsByListId[cleanTargetListId] = targetItems;
+      draft.lists = draft.lists.map((list) =>
+        list.id === sourceListId || list.id === cleanTargetListId
+          ? touchList(list)
+          : list
+      );
+
+      result = {
+        item: finalItem,
+        fromListId: sourceListId,
+        toListId: cleanTargetListId
+      };
+
+      return draft;
+    });
+
+    if (!result) return { ok: false, reason: 'NOT_FOUND' };
+
+    safeToast('Ítem movido ✅');
+    safeHaptic(10);
+
+    return { ok: true, ...result };
+  }
+
+  function copyItemToList(itemId, targetListId, options = {}) {
+    const cleanId = ensureString(itemId, 120);
+    const cleanTargetListId = ensureString(targetListId, 120);
+
+    if (!cleanId) return { ok: false, reason: 'BAD_ID' };
+    if (!cleanTargetListId) return { ok: false, reason: 'BAD_LIST_ID' };
+
+    let result = null;
+
+    commit((draft) => {
+      if (!findListById(draft, cleanTargetListId)) return draft;
+
+      const sourceListId =
+        ensureString(options.fromListId, 120) && findListById(draft, options.fromListId)
+          ? ensureString(options.fromListId, 120)
+          : draft.currentListId;
+
+      const sourceItems = Array.isArray(draft.itemsByListId[sourceListId])
+        ? draft.itemsByListId[sourceListId]
+        : [];
+
+      const sourceIndex = findItemIndexById(sourceItems, cleanId);
+      if (sourceIndex < 0) return draft;
+
+      const source = sourceItems[sourceIndex];
+
+      const targetItems = Array.isArray(draft.itemsByListId[cleanTargetListId])
+        ? [...draft.itemsByListId[cleanTargetListId]]
+        : [];
+
+      const duplicate = createItemRecord({
+        text: source.text,
+        checked: !!options.keepChecked ? source.checked : false,
+        category: source.category,
+        emoji: source.emoji,
+        notes: source.notes
+      });
+
+      targetItems.unshift(duplicate);
+      draft.itemsByListId[cleanTargetListId] = targetItems;
+      draft.lists = draft.lists.map((list) =>
+        list.id === cleanTargetListId ? touchList(list) : list
+      );
+
+      result = {
+        item: duplicate,
+        fromListId: sourceListId,
+        toListId: cleanTargetListId
+      };
+
+      return draft;
+    });
+
+    if (!result) return { ok: false, reason: 'NOT_FOUND' };
+
+    safeToast('Ítem copiado ✅');
+    safeHaptic(10);
+
+    return { ok: true, ...result };
   }
 
   function resetChecks() {
-    updateData((next, ctx) => {
-      const items = getModeItems_(next.data, ctx.mode).map(i => ({ ...i, done: false }));
-      setModeItems_(next.data, ctx.mode, items);
-      setCompletedFlag_(next.data, ctx.mode, false);
+    const nextState = commit((draft) => {
+      const listId = draft.currentListId;
+      const items = Array.isArray(draft.itemsByListId[listId])
+        ? draft.itemsByListId[listId]
+        : [];
+
+      draft.itemsByListId[listId] = items.map((item) => ({
+        ...item,
+        checked: false,
+        updatedAt: nowIso()
+      }));
+
+      draft.lists = draft.lists.map((list) =>
+        list.id === listId ? touchList(list) : list
+      );
+
+      return draft;
     });
 
     safeToast('Checklist reiniciado ↺');
-    safeHaptic(12);
-    return { ok: true };
-  }
-
-  function setAll(done) {
-    const d = !!done;
-
-    updateData((next, ctx) => {
-      const items = getModeItems_(next.data, ctx.mode).map(i => ({ ...i, done: d }));
-      setModeItems_(next.data, ctx.mode, items);
-      setCompletedFlag_(next.data, ctx.mode, false);
-    });
-
-    safeToast(d ? 'Todo marcado ✅' : 'Todo desmarcado ⬜');
-    safeHaptic(14);
-    return { ok: true };
-  }
-
-  function createItem({ name, emoji = null, cat = 'otros', targetMode = null, modes = null } = {}) {
-    const cleanName = ensureString(name, 80);
-    const cleanCat = slugifyCatKey(cat || 'otros');
-    const cleanEmoji = normalizeEmoji(emoji);
-    const cleanTargetMode = targetMode ? slugifyModeKey(targetMode) : '';
-    const cleanModes = Array.isArray(modes)
-      ? uniq(modes.map(x => slugifyModeKey(x)).filter(Boolean))
-      : null;
-
-    if (!cleanName) {
-      safeToast('Ponle nombre al item 🙃');
-      safeHaptic(18);
-      return { ok: false, reason: 'EMPTY_NAME' };
-    }
-
-    let createdId = '';
-    let usedMode = '';
-
-    updateData((next, ctx) => {
-      const modeToUse = cleanTargetMode || ctx.mode;
-      usedMode = modeToUse;
-
-      ensureModeInitialized_(next.data, modeToUse);
-      ensureCatExistsInMode_(next.data, modeToUse, cleanCat, cleanCat);
-
-      const items = getModeItems_(next.data, modeToUse);
-      createdId = makeId();
-
-      items.unshift({
-        id: createdId,
-        cat: cleanCat,
-        name: cleanName,
-        emoji: cleanEmoji,
-        done: false,
-        modes: cleanModes?.length ? uniq([modeToUse, ...cleanModes]) : [modeToUse],
-        originId: null
-      });
-
-      setModeItems_(next.data, modeToUse, items);
-      setCompletedFlag_(next.data, modeToUse, false);
-    });
-
-    if (createdId && cleanModes?.length) {
-      const extraModes = cleanModes.filter(m => m !== usedMode);
-      if (extraModes.length) {
-        assignItemToModes(createdId, extraModes, { keepDone: false, silent: true, fromMode: usedMode });
-      }
-    }
-
-    safeToast('Agregado ✅');
-    safeHaptic(12);
-    return { ok: true, id: createdId, modeKey: usedMode || cleanTargetMode || getActiveMode(snap()) };
-  }
-
-  /* =========================
-     EDIT / MOVE / DUPLICATE
-  ========================= */
-
-  function editItem(id, { name, emoji, cat, modes } = {}) {
-    const cleanId = ensureString(id, 140);
-    if (!cleanId) return { ok: false, reason: 'BAD_ID' };
-
-    const hasName = name !== undefined;
-    const hasEmoji = emoji !== undefined;
-    const hasCat = cat !== undefined;
-    const hasModes = modes !== undefined;
-
-    const cleanName = hasName ? ensureString(name, 80) : null;
-    const cleanEmoji = hasEmoji ? normalizeEmoji(emoji) : null;
-    const cleanCat = hasCat ? slugifyCatKey(cat || 'otros') : null;
-    const cleanModes = hasModes
-      ? (Array.isArray(modes) ? uniq(modes.map(x => slugifyModeKey(x)).filter(Boolean)) : null)
-      : null;
-
-    if (hasName && !cleanName) {
-      safeToast('Ponle nombre al item 🙃');
-      safeHaptic(18);
-      return { ok: false, reason: 'EMPTY_NAME' };
-    }
-
-    let updated = false;
-    let currentMode = '';
-
-    updateData((next, ctx) => {
-      currentMode = ctx.mode;
-      const items = getModeItems_(next.data, ctx.mode);
-      const idx = findIndexById(items, cleanId);
-      if (idx < 0) return;
-
-      const it = items[idx];
-      const nextIt = { ...it };
-
-      if (hasName) nextIt.name = cleanName;
-      if (hasEmoji) nextIt.emoji = cleanEmoji;
-      if (hasCat) {
-        nextIt.cat = cleanCat;
-        ensureCatExistsInMode_(next.data, ctx.mode, cleanCat, cleanCat);
-      }
-      if (hasModes) {
-        nextIt.modes = cleanModes?.length ? uniq([ctx.mode, ...cleanModes]) : [ctx.mode];
-      }
-
-      items[idx] = nextIt;
-      setModeItems_(next.data, ctx.mode, items);
-      setCompletedFlag_(next.data, ctx.mode, false);
-      updated = true;
-    });
-
-    if (!updated) return { ok: false, reason: 'NOT_FOUND' };
-
-    if (hasModes) {
-      const wanted = cleanModes?.length ? uniq([currentMode, ...cleanModes]) : [currentMode];
-      const other = wanted.filter(m => m !== currentMode);
-      if (other.length) assignItemToModes(cleanId, other, { keepDone: false, silent: true, fromMode: currentMode });
-    }
-
-    safeToast('Actualizado ✅');
     safeHaptic(10);
-    return { ok: true };
+
+    return {
+      ok: true,
+      ...getCompletionMeta(getListItems(nextState, nextState.currentListId))
+    };
   }
 
-  function moveItem(id, toCat) {
-    const cleanId = ensureString(id, 140);
-    const cleanCat = slugifyCatKey(toCat || 'otros');
-    if (!cleanId) return { ok: false, reason: 'BAD_ID' };
+  function setAll(checked) {
+    const nextChecked = !!checked;
 
-    let moved = false;
+    const nextState = commit((draft) => {
+      const listId = draft.currentListId;
+      const items = Array.isArray(draft.itemsByListId[listId])
+        ? draft.itemsByListId[listId]
+        : [];
 
-    updateData((next, ctx) => {
-      const items = getModeItems_(next.data, ctx.mode);
-      const idx = findIndexById(items, cleanId);
-      if (idx < 0) return;
+      draft.itemsByListId[listId] = items.map((item) => ({
+        ...item,
+        checked: nextChecked,
+        updatedAt: nowIso()
+      }));
 
-      if (items[idx].cat === cleanCat) {
-        moved = true;
-        return;
-      }
+      draft.lists = draft.lists.map((list) =>
+        list.id === listId ? touchList(list) : list
+      );
 
-      ensureCatExistsInMode_(next.data, ctx.mode, cleanCat, cleanCat);
-
-      items[idx] = { ...items[idx], cat: cleanCat };
-      setModeItems_(next.data, ctx.mode, items);
-      setCompletedFlag_(next.data, ctx.mode, false);
-      moved = true;
+      return draft;
     });
 
-    if (!moved) return { ok: false, reason: 'NOT_FOUND' };
-
-    safeToast('Movido ✅');
+    safeToast(nextChecked ? 'Todo marcado ✅' : 'Todo desmarcado ⬜');
     safeHaptic(10);
-    return { ok: true };
+
+    return {
+      ok: true,
+      checked: nextChecked,
+      ...getCompletionMeta(getListItems(nextState, nextState.currentListId))
+    };
   }
 
-  function duplicateItem(id, toCat) {
-    const cleanId = ensureString(id, 140);
-    const cleanCat = slugifyCatKey(toCat || 'otros');
-    if (!cleanId) return { ok: false, reason: 'BAD_ID' };
+  /* ==========================================================================
+    LISTS
+  ========================================================================== */
 
-    let copied = false;
-
-    updateData((next, ctx) => {
-      const items = getModeItems_(next.data, ctx.mode);
-      const idx = findIndexById(items, cleanId);
-      if (idx < 0) return;
-
-      const it = items[idx];
-      ensureCatExistsInMode_(next.data, ctx.mode, cleanCat, cleanCat);
-
-      items.unshift({
-        id: makeId(),
-        cat: cleanCat,
-        name: ensureString(it.name, 80) || 'Item',
-        emoji: it.emoji || null,
-        done: false,
-        modes: Array.isArray(it.modes) && it.modes.length ? [...it.modes] : [ctx.mode],
-        originId: it.originId || it.id
-      });
-
-      setModeItems_(next.data, ctx.mode, items);
-      setCompletedFlag_(next.data, ctx.mode, false);
-      copied = true;
-    });
-
-    if (!copied) return { ok: false, reason: 'NOT_FOUND' };
-
-    safeToast('Copiado ✅');
-    safeHaptic(10);
-    return { ok: true };
-  }
-
-  /* =========================
-     MODE ASSIGNMENT
-  ========================= */
-
-  function assignItemToModes(id, modes = [], opts = {}) {
-    const cleanId = ensureString(id, 140);
-    const targets = uniq((modes || []).map(x => slugifyModeKey(x)).filter(Boolean));
-    const keepDone = !!opts.keepDone;
-    const silent = !!opts.silent;
-
-    if (!cleanId) return { ok: false, reason: 'BAD_ID' };
-    if (!targets.length) return { ok: false, reason: 'NO_MODES' };
-
-    const s = snap();
-    const fromMode = slugifyModeKey(opts.fromMode || getActiveMode(s));
-
-    const data = ensureDataShape_(s.data, fromMode);
-    const fromItems = getModeItems_(data, fromMode);
-    const idx = findIndexById(fromItems, cleanId);
-    if (idx < 0) return { ok: false, reason: 'NOT_FOUND' };
-
-    const source = repairItem_(fromItems[idx]);
-    const originId = source.originId || source.id;
-    let createdAny = false;
-
-    updateData((next) => {
-      next.data = ensureDataShape_(next.data, fromMode);
-
-      for (const m of targets) {
-        if (m === fromMode) continue;
-
-        ensureModeInitialized_(next.data, m);
-        ensureCatExistsInMode_(next.data, m, source.cat, source.cat);
-
-        const list = getModeItems_(next.data, m);
-        const already = list.some(it => {
-          const itOrigin = it?.originId || it?.id;
-          return String(itOrigin) === String(originId);
-        });
-
-        if (already) continue;
-
-        list.unshift({
-          id: makeId(),
-          cat: ensureString(source.cat, 40) || 'otros',
-          name: ensureString(source.name, 80) || 'Item',
-          emoji: source.emoji || null,
-          done: keepDone ? !!source.done : false,
-          modes: [m],
-          originId
-        });
-
-        setModeItems_(next.data, m, list);
-        setCompletedFlag_(next.data, m, false);
-        createdAny = true;
-      }
-    });
-
-    if (!createdAny) {
-      return { ok: false, reason: 'ALREADY_EXISTS' };
-    }
-
-    if (!silent) {
-      safeToast('Asignado a otras listas ✅');
-      safeHaptic(10);
-    }
-
-    return { ok: true };
-  }
-
-  function setItemModes(id, modes = []) {
-    const cleanId = ensureString(id, 140);
-    if (!cleanId) return { ok: false, reason: 'BAD_ID' };
-
-    const s = snap();
-    const currentMode = getActiveMode(s);
-    const wanted = uniq((modes || []).map(x => slugifyModeKey(x)).filter(Boolean));
-    const forced = wanted.length ? uniq([currentMode, ...wanted]) : [currentMode];
-
-    let ok = false;
-
-    updateData((next, ctx) => {
-      const items = getModeItems_(next.data, ctx.mode);
-      const idx = findIndexById(items, cleanId);
-      if (idx < 0) return;
-
-      items[idx] = { ...items[idx], modes: forced };
-      setModeItems_(next.data, ctx.mode, items);
-      setCompletedFlag_(next.data, ctx.mode, false);
-      ok = true;
-    });
-
-    if (!ok) return { ok: false, reason: 'NOT_FOUND' };
-
-    const other = forced.filter(m => m !== currentMode);
-    if (other.length) assignItemToModes(cleanId, other, { keepDone: false, silent: true, fromMode: currentMode });
-
-    safeToast('Listas actualizadas ✅');
-    safeHaptic(8);
-    return { ok: true, modes: forced };
-  }
-
-  function toggleItemMode(id, modeToToggle) {
-    const cleanId = ensureString(id, 140);
-    const m = slugifyModeKey(modeToToggle);
-
-    if (!cleanId) return { ok: false, reason: 'BAD_ID' };
-    if (!m) return { ok: false, reason: 'BAD_MODE' };
-
-    const s = snap();
-    const currentMode = getActiveMode(s);
-
-    const shaped = ensureDataShape_(s.data, currentMode);
-    const items = getModeItems_(shaped, currentMode);
-    const idx = findIndexById(items, cleanId);
-    if (idx < 0) return { ok: false, reason: 'NOT_FOUND' };
-
-    const it = repairItem_(items[idx]);
-    const cur = Array.isArray(it.modes) && it.modes.length ? uniq(it.modes) : [currentMode];
-
-    const willAdd = !cur.includes(m);
-    let nextModes = willAdd ? uniq([...cur, m]) : cur.filter(x => x !== m);
-    if (!nextModes.length) nextModes = [currentMode];
-
-    updateData((next, ctx) => {
-      const list = getModeItems_(next.data, ctx.mode);
-      const i = findIndexById(list, cleanId);
-      if (i < 0) return;
-
-      list[i] = { ...list[i], modes: nextModes };
-      setModeItems_(next.data, ctx.mode, list);
-      setCompletedFlag_(next.data, ctx.mode, false);
-    });
-
-    if (willAdd) assignItemToModes(cleanId, [m], { keepDone: false, silent: true, fromMode: currentMode });
-
-    safeToast('Listas actualizadas ✅');
-    safeHaptic(8);
-    return { ok: true, modes: nextModes };
-  }
-
-  /* =========================
-     MODE CRUD
-  ========================= */
-
-  function createMode(nameOrPayload, maybePayload = {}) {
+  function createList(nameOrPayload, maybePayload = {}) {
     const payload = isPlainObject(nameOrPayload)
       ? nameOrPayload
       : { name: nameOrPayload, ...(isPlainObject(maybePayload) ? maybePayload : {}) };
 
-    const cleanName = ensureString(payload?.name || payload?.label || '', 60);
-    const cleanIcon = normalizeEmoji(payload?.icon);
-    const requestedKey = ensureString(payload?.key || '', 60);
+    const rawName = ensureString(payload.name ?? payload.label ?? payload.title, 80);
+    const cleanName = sanitizeListName(payload.name ?? payload.label ?? payload.title);
+    const cleanIcon = normalizeEmoji(payload.icon) || DEFAULT_LIST_ICON;
 
-    if (!cleanName) {
+    if (!rawName) {
       safeToast('Ponle nombre a la lista 🙃');
-      safeHaptic(18);
+      safeHaptic(16);
       return { ok: false, reason: 'EMPTY_NAME' };
     }
 
-    let createdKey = '';
-    let createdMeta = null;
+    const current = snapshot();
+    const duplicate = findListByName(current, cleanName);
 
-    updateData((next) => {
-      next.data = ensureDataShape_(next.data, getActiveMode(next));
+    if (duplicate) {
+      return { ok: false, reason: 'DUPLICATE_NAME', listId: duplicate.id };
+    }
 
-      const baseKey = slugifyModeKey(requestedKey || cleanName);
-      let finalKey = baseKey;
-      let n = 2;
+    let created = null;
 
-      while (next.data.modes?.[finalKey] || next.data.itemsByMode?.[finalKey]) {
-        finalKey = `${baseKey}-${n++}`;
-      }
-
-      ensureModeInitialized_(next.data, finalKey);
-      createdMeta = ensureModeMeta_(next.data, finalKey, {
-        name: cleanName,
-        label: `🧳 ${cleanName}`,
-        icon: cleanIcon,
-        createdAt: nowIso(),
-        updatedAt: nowIso()
-      });
-
-      createdKey = finalKey;
-      next.data.mode = finalKey;
-    });
-
-    updateSettings((next) => {
-      next.settings.tripMode = createdKey || next.settings.tripMode || 'salida';
+    commit((draft) => {
+      created = createListRecord({ name: cleanName, icon: cleanIcon });
+      draft.lists = [created, ...draft.lists];
+      draft.itemsByListId[created.id] = [];
+      draft.currentListId = created.id;
+      return draft;
     });
 
     safeToast('Lista creada ✅');
     safeHaptic(12);
-    return { ok: true, modeKey: createdKey, mode: createdMeta };
+
+    return {
+      ok: true,
+      list: created,
+      listId: created?.id || null
+    };
   }
 
-  function renameMode(modeKey, newName) {
-    const key = slugifyModeKey(modeKey);
-    const cleanName = ensureString(newName, 60);
+  function renameList(listId, newName) {
+    const cleanId = ensureString(listId, 120);
+    const rawName = ensureString(newName, 80);
+    const cleanName = sanitizeListName(newName);
 
-    if (!key) return { ok: false, reason: 'BAD_MODE' };
-    if (!cleanName) {
+    if (!cleanId) return { ok: false, reason: 'BAD_LIST_ID' };
+
+    if (!rawName) {
       safeToast('Ponle nombre a la lista 🙃');
-      safeHaptic(18);
+      safeHaptic(16);
       return { ok: false, reason: 'EMPTY_NAME' };
     }
 
-    let ok = false;
+    const current = snapshot();
+    if (!findListById(current, cleanId)) {
+      return { ok: false, reason: 'NOT_FOUND' };
+    }
 
-    updateData((next) => {
-      next.data = ensureDataShape_(next.data, getActiveMode(next));
-      if (!next.data.modes?.[key]) return;
+    const duplicate = findListByName(current, cleanName, cleanId);
+    if (duplicate) {
+      return { ok: false, reason: 'DUPLICATE_NAME', listId: duplicate.id };
+    }
 
-      next.data.modes[key] = repairModeMeta_(key, {
-        ...next.data.modes[key],
-        name: cleanName,
-        label: `🧳 ${cleanName}`,
-        updatedAt: nowIso()
-      });
-
-      ok = true;
+    commit((draft) => {
+      draft.lists = draft.lists.map((list) =>
+        list.id === cleanId
+          ? { ...list, name: cleanName, updatedAt: nowIso() }
+          : list
+      );
+      return draft;
     });
 
-    if (!ok) return { ok: false, reason: 'NOT_FOUND' };
-
     safeToast('Lista actualizada ✨');
-    safeHaptic(10);
-    return { ok: true, modeKey: key };
+    safeHaptic(8);
+
+    return { ok: true, listId: cleanId };
   }
 
-  function updateMode(modeKey, payload = {}) {
-    const key = slugifyModeKey(modeKey);
-    if (!key) return { ok: false, reason: 'BAD_MODE' };
+  function updateList(listId, payload = {}) {
+    const cleanId = ensureString(listId, 120);
+    if (!cleanId) return { ok: false, reason: 'BAD_LIST_ID' };
 
-    const cleanName = payload?.name != null ? ensureString(payload.name, 60) : undefined;
-    const cleanLabel = payload?.label != null ? ensureString(payload.label, 60) : undefined;
-    const cleanIcon = payload?.icon !== undefined ? normalizeEmoji(payload.icon) : undefined;
+    const current = snapshot();
+    const existing = findListById(current, cleanId);
+    if (!existing) return { ok: false, reason: 'NOT_FOUND' };
 
-    if (payload?.name !== undefined && !cleanName) {
+    const hasName =
+      Object.prototype.hasOwnProperty.call(payload, 'name') ||
+      Object.prototype.hasOwnProperty.call(payload, 'label') ||
+      Object.prototype.hasOwnProperty.call(payload, 'title');
+
+    const rawName = hasName
+      ? ensureString(payload.name ?? payload.label ?? payload.title, 80)
+      : existing.name;
+
+    const cleanName = hasName
+      ? sanitizeListName(payload.name ?? payload.label ?? payload.title)
+      : existing.name;
+
+    if (hasName && !rawName) {
       safeToast('Ponle nombre a la lista 🙃');
-      safeHaptic(18);
+      safeHaptic(16);
       return { ok: false, reason: 'EMPTY_NAME' };
     }
 
-    let ok = false;
-    let meta = null;
+    const duplicate = findListByName(current, cleanName, cleanId);
+    if (duplicate) {
+      return { ok: false, reason: 'DUPLICATE_NAME', listId: duplicate.id };
+    }
 
-    updateData((next) => {
-      next.data = ensureDataShape_(next.data, getActiveMode(next));
-      if (!next.data.modes?.[key]) return;
+    commit((draft) => {
+      draft.lists = draft.lists.map((list) => {
+        if (list.id !== cleanId) return list;
 
-      const prev = next.data.modes[key];
-      meta = repairModeMeta_(key, {
-        ...prev,
-        ...(cleanName !== undefined ? { name: cleanName, label: `🧳 ${cleanName}` } : {}),
-        ...(cleanLabel !== undefined ? { label: cleanLabel } : {}),
-        ...(cleanIcon !== undefined ? { icon: cleanIcon } : {}),
-        updatedAt: nowIso()
+        return {
+          ...list,
+          ...(hasName ? { name: cleanName } : {}),
+          ...(Object.prototype.hasOwnProperty.call(payload, 'icon')
+            ? { icon: normalizeEmoji(payload.icon) || DEFAULT_LIST_ICON }
+            : {}),
+          updatedAt: nowIso()
+        };
       });
 
-      next.data.modes[key] = meta;
-      ok = true;
+      return draft;
     });
 
-    if (!ok) return { ok: false, reason: 'NOT_FOUND' };
-
     safeToast('Lista actualizada ✨');
-    safeHaptic(10);
-    return { ok: true, modeKey: key, mode: meta };
+    safeHaptic(8);
+
+    return { ok: true, listId: cleanId };
   }
 
-  function duplicateMode(modeKey, newName) {
-    const key = slugifyModeKey(modeKey);
-    const requestedName = ensureString(newName, 60);
+  function selectList(listId) {
+    const cleanId = ensureString(listId, 120);
+    if (!cleanId) return { ok: false, reason: 'BAD_LIST_ID' };
 
-    if (!key) return { ok: false, reason: 'BAD_MODE' };
+    const current = snapshot();
+    if (!findListById(current, cleanId)) {
+      return { ok: false, reason: 'NOT_FOUND' };
+    }
 
-    const s = snap();
-    const shaped = ensureDataShape_(s.data, getActiveMode(s));
-    const sourceMeta = shaped.modes?.[key];
-    const sourceItems = getModeItems_(shaped, key);
-    const sourceCats = getModeCats_(shaped, key);
+    commit((draft) => {
+      draft.currentListId = cleanId;
+      return draft;
+    });
 
-    if (!sourceMeta) return { ok: false, reason: 'NOT_FOUND' };
+    return { ok: true, listId: cleanId };
+  }
 
-    const baseName = requestedName || `${stripLeadingEmoji(sourceMeta.label || sourceMeta.name || key)} copia`;
-    let createdKey = '';
-    let createdMeta = null;
+  function duplicateList(listId, newName = '') {
+    const cleanId = ensureString(listId, 120);
+    if (!cleanId) return { ok: false, reason: 'BAD_LIST_ID' };
 
-    updateData((next) => {
-      next.data = ensureDataShape_(next.data, getActiveMode(next));
+    const current = snapshot();
+    const source = findListById(current, cleanId);
+    if (!source) return { ok: false, reason: 'NOT_FOUND' };
 
-      const baseKey = slugifyModeKey(baseName);
-      let finalKey = baseKey;
-      let n = 2;
+    const finalName = sanitizeListName(newName || `${source.name} copia`);
+    const duplicate = findListByName(current, finalName);
 
-      while (next.data.modes?.[finalKey] || next.data.itemsByMode?.[finalKey]) {
-        finalKey = `${baseKey}-${n++}`;
-      }
+    if (duplicate) {
+      return { ok: false, reason: 'DUPLICATE_NAME', listId: duplicate.id };
+    }
 
-      ensureModeInitialized_(next.data, finalKey);
+    let created = null;
 
-      const clonedItems = sourceItems.map(it => ({
-        ...repairItem_(it),
-        id: makeId(),
-        done: false,
-        originId: it.originId || it.id
-      }));
+    commit((draft) => {
+      const sourceItems = Array.isArray(draft.itemsByListId[cleanId])
+        ? draft.itemsByListId[cleanId]
+        : [];
 
-      const clonedCats = sourceCats.map(c => ({ ...repairCat_(c) }));
-
-      setModeItems_(next.data, finalKey, clonedItems);
-      setModeCats_(next.data, finalKey, ensureCatsContainOtros_(clonedCats));
-
-      createdMeta = ensureModeMeta_(next.data, finalKey, {
-        name: baseName,
-        label: `🧳 ${baseName}`,
-        icon: sourceMeta.icon || null,
-        createdAt: nowIso(),
-        updatedAt: nowIso()
+      created = createListRecord({
+        name: finalName,
+        icon: source.icon
       });
 
-      setCompletedFlag_(next.data, finalKey, false);
-      createdKey = finalKey;
+      draft.lists = [created, ...draft.lists];
+      draft.itemsByListId[created.id] = sourceItems.map((item) =>
+        createItemRecord({
+          text: item.text,
+          checked: false,
+          category: item.category,
+          emoji: item.emoji,
+          notes: item.notes
+        })
+      );
+      draft.currentListId = created.id;
+
+      return draft;
     });
 
     safeToast('Lista duplicada ✅');
     safeHaptic(12);
-    return { ok: true, modeKey: createdKey, mode: createdMeta };
-  }
-
-  function deleteMode(modeKey) {
-    const key = slugifyModeKey(modeKey);
-    if (!key) return { ok: false, reason: 'BAD_MODE' };
-
-    const s = snap();
-    const shaped = ensureDataShape_(s.data, getActiveMode(s));
-
-    if (!shaped.modes?.[key]) return { ok: false, reason: 'NOT_FOUND' };
-    if (!canDeleteMode_(shaped, key)) {
-      safeToast('Debe quedar al menos una lista 😑');
-      safeHaptic(16);
-      return { ok: false, reason: 'LAST_MODE' };
-    }
-
-    const fallbackMode =
-      Object.keys(shaped.modes).find(m => m !== key) ||
-      Object.keys(shaped.itemsByMode || {}).find(m => m !== key) ||
-      'salida';
-
-    updateData((next) => {
-      next.data = ensureDataShape_(next.data, getActiveMode(next));
-
-      delete next.data.itemsByMode[key];
-      delete next.data.catsByMode[key];
-      delete next.data.modes[key];
-      if (isPlainObject(next.data.completedOnceByMode)) delete next.data.completedOnceByMode[key];
-      if (isPlainObject(next.data.__completedOnceByMode)) delete next.data.__completedOnceByMode[key];
-
-      if (next.data.mode === key) {
-        next.data.mode = fallbackMode;
-      }
-
-      ensureModeInitialized_(next.data, next.data.mode || fallbackMode);
-    });
-
-    updateSettings((next) => {
-      if (next.settings?.tripMode === key) {
-        next.settings.tripMode = fallbackMode;
-      }
-    });
-
-    safeToast('Lista eliminada 🗑️');
-    safeHaptic(12);
-    return { ok: true, modeKey: key, fallbackMode };
-  }
-
-  function openModeEditor(modeKey) {
-    const key = slugifyModeKey(modeKey || getActiveMode(snap()));
-    const s = snap();
-    const shaped = ensureDataShape_(s.data, getActiveMode(s));
-    const meta = shaped.modes?.[key] || null;
-
-    if (!meta) return { ok: false, reason: 'NOT_FOUND' };
 
     return {
       ok: true,
-      modeKey: key,
-      mode: { ...meta },
-      itemsCount: getModeItems_(shaped, key).length
+      list: created,
+      listId: created?.id || null
     };
   }
 
-  /* =========================
-     MODE SWITCH
-  ========================= */
+  function deleteList(listId) {
+    const cleanId = ensureString(listId, 120);
+    if (!cleanId) return { ok: false, reason: 'BAD_LIST_ID' };
 
-  function changeMode(mode) {
-    const m = slugifyModeKey(mode || 'salida') || 'salida';
+    const current = snapshot();
+    const index = findListIndexById(current, cleanId);
 
-    commitState((s) => {
-      const next = { ...s };
-      next.data = ensureDataShape_(s.data, m);
-      ensureModeInitialized_(next.data, m);
-      next.data.mode = m;
-      next.activeCat = 'all';
-      next.settings = {
-        ...(s.settings || {}),
-        tripMode: m
-      };
-      return next;
+    if (index < 0) return { ok: false, reason: 'NOT_FOUND' };
+
+    if (current.lists.length <= 1) {
+      safeToast('Debe quedar al menos una lista 😑');
+      safeHaptic(16);
+      return { ok: false, reason: 'LAST_LIST' };
+    }
+
+    let fallbackListId = null;
+
+    commit((draft) => {
+      const currentIndex = findListIndexById(draft, cleanId);
+      if (currentIndex < 0) return draft;
+
+      const filtered = draft.lists.filter((list) => list.id !== cleanId);
+      delete draft.itemsByListId[cleanId];
+
+      fallbackListId =
+        filtered[currentIndex]?.id ||
+        filtered[currentIndex - 1]?.id ||
+        filtered[0]?.id ||
+        null;
+
+      draft.lists = filtered;
+
+      if (draft.currentListId === cleanId) {
+        draft.currentListId = fallbackListId;
+      }
+
+      return draft;
     });
 
-    saveSettings();
-    saveData();
-    return { ok: true, modeKey: m };
+    safeToast('Lista eliminada 🗑️');
+    safeHaptic(10);
+
+    return {
+      ok: true,
+      listId: cleanId,
+      fallbackListId
+    };
   }
 
-  /* =========================
-     SETTINGS HELPERS
-  ========================= */
+  function reorderLists(nextListIds = []) {
+    const desired = Array.isArray(nextListIds)
+      ? nextListIds.map((id) => ensureString(id, 120)).filter(Boolean)
+      : [];
+
+    if (!desired.length) {
+      return { ok: false, reason: 'EMPTY_ORDER' };
+    }
+
+    commit((draft) => {
+      const map = new Map(draft.lists.map((list) => [list.id, list]));
+      const reordered = [];
+
+      for (const id of desired) {
+        if (map.has(id)) {
+          reordered.push(map.get(id));
+          map.delete(id);
+        }
+      }
+
+      for (const leftover of map.values()) {
+        reordered.push(leftover);
+      }
+
+      draft.lists = reordered;
+      return draft;
+    });
+
+    return { ok: true };
+  }
+
+  function getListInfo(listId = '') {
+    const state = snapshot();
+    const cleanId = ensureString(listId, 120) || state.currentListId;
+    const list = findListById(state, cleanId);
+
+    if (!list) return { ok: false, reason: 'NOT_FOUND' };
+
+    const items = Array.isArray(state.itemsByListId[cleanId])
+      ? state.itemsByListId[cleanId]
+      : [];
+
+    return {
+      ok: true,
+      listId: list.id,
+      list: { ...list },
+      itemsCount: items.length,
+      checkedCount: items.filter((item) => item.checked).length
+    };
+  }
+
+  /* ==========================================================================
+    SETTINGS
+  ========================================================================== */
 
   function setMotion(value) {
-    updateSettings((next) => {
-      next.settings.motion = !!value;
+    commitSettings((settings) => {
+      settings.motion = !!value;
     });
+
     return { ok: true, value: !!value };
   }
 
   function setSound(value) {
-    updateSettings((next) => {
-      next.settings.sound = !!value;
+    commitSettings((settings) => {
+      settings.sound = !!value;
     });
+
     return { ok: true, value: !!value };
   }
 
-  /* =========================
-     WIPE
-  ========================= */
+  /* ==========================================================================
+    DESTRUCTIVE
+  ========================================================================== */
 
   function wipeAll() {
-    const baseMode = 'salida';
-    const preset = newPreset(baseMode) || {};
-    const fresh = ensureDataShape_(preset, baseMode);
+    let freshList = null;
 
-    ensureModeInitialized_(fresh, baseMode);
-    fresh.mode = baseMode;
+    commit((draft) => {
+      freshList = createListRecord({
+        name: DEFAULT_LIST_NAME,
+        icon: DEFAULT_LIST_ICON
+      });
 
-    commitState((s) => ({
-      ...s,
-      activeCat: 'all',
-      settings: {
-        tripMode: baseMode,
-        motion: true,
-        sound: true,
-        streak: 0
-      },
-      data: fresh
-    }));
+      draft.lists = [freshList];
+      draft.currentListId = freshList.id;
+      draft.itemsByListId = {
+        [freshList.id]: []
+      };
+      draft.settings = { ...DEFAULT_SETTINGS };
 
-    saveSettings();
-    saveData();
+      return draft;
+    });
+
+    try {
+      saveSettings({ ...DEFAULT_SETTINGS });
+    } catch {}
 
     safeToast('Todo borrado. Nueva vida, supongo 🧼');
-    safeHaptic(14);
-    return { ok: true };
-  }
-
-  /* =========================
-     COMPLETION
-  ========================= */
-
-  function onCompletedOnce() {
-    const s = snap();
-    const mode = getActiveMode(s);
-    const data = ensureDataShape_(s.data, mode);
-    const items = getModeItems_(data, mode);
-
-    if (!items.length) return { ok: false, reason: 'EMPTY' };
-
-    const done = items.reduce((acc, it) => acc + (it?.done ? 1 : 0), 0);
-    const total = items.length;
-
-    if (!total || done !== total) return { ok: false, reason: 'NOT_COMPLETE' };
-    if (getCompletedFlag_(data, mode)) return { ok: false, reason: 'ALREADY' };
-
-    updateData((next) => {
-      setCompletedFlag_(next.data, mode, true);
-    });
-
-    updateSettings((next) => {
-      next.settings.streak = (next.settings.streak || 0) + 1;
-    });
-
-    if (s?.settings?.motion) safeConfetti();
-    safeToast('Checklist completo. Qué adulto responsable ✨');
     safeHaptic(12);
 
-    return { ok: true };
+    return {
+      ok: true,
+      listId: freshList?.id || null
+    };
+  }
+
+  /* ==========================================================================
+    COMPLETION
+  ========================================================================== */
+
+  function onCompletedOnce() {
+    const state = snapshot();
+    const list = getCurrentList(state);
+    if (!list) return { ok: false, reason: 'NO_ACTIVE_LIST' };
+
+    const items = getCurrentItems(state);
+    const meta = getCompletionMeta(items);
+
+    if (!meta.total) return { ok: false, reason: 'EMPTY' };
+    if (!meta.completed) return { ok: false, reason: 'NOT_COMPLETE' };
+
+    return { ok: true, ...meta };
+  }
+
+  /* ==========================================================================
+    LEGACY ALIASES
+  ========================================================================== */
+
+  function createMode(nameOrPayload, maybePayload) {
+    const result = createList(nameOrPayload, maybePayload);
+    return {
+      ...result,
+      modeKey: result.listId || null,
+      mode: result.list || null
+    };
+  }
+
+  function renameMode(modeKey, newName) {
+    const result = renameList(modeKey, newName);
+    return {
+      ...result,
+      modeKey: result.listId || modeKey
+    };
+  }
+
+  function updateMode(modeKey, payload) {
+    const result = updateList(modeKey, payload);
+    return {
+      ...result,
+      modeKey: result.listId || modeKey
+    };
+  }
+
+  function deleteMode(modeKey) {
+    const result = deleteList(modeKey);
+    return {
+      ...result,
+      modeKey: result.listId || modeKey,
+      fallbackMode: result.fallbackListId || null
+    };
+  }
+
+  function duplicateMode(modeKey, newName) {
+    const result = duplicateList(modeKey, newName);
+    return {
+      ...result,
+      modeKey: result.listId || null,
+      mode: result.list || null
+    };
+  }
+
+  function changeMode(modeKey) {
+    const result = selectList(modeKey);
+    return {
+      ...result,
+      modeKey: result.listId || modeKey
+    };
+  }
+
+  function openModeEditor(modeKey) {
+    const result = getListInfo(modeKey);
+    return {
+      ...result,
+      modeKey: result.listId || modeKey,
+      mode: result.list || null
+    };
   }
 
   return {
-    // core
-    toggleDone,
+    getCurrentList,
+    getCurrentListId,
+    getCurrentItems,
+    getListInfo,
+
+    createItem,
+    editItem,
     deleteItem,
+    duplicateItem,
+    moveItem,
+    moveItemToList,
+    copyItemToList,
+    toggleDone,
     resetChecks,
     setAll,
-    createItem,
 
-    // item ops
-    editItem,
-    moveItem,
-    duplicateItem,
+    createList,
+    renameList,
+    updateList,
+    deleteList,
+    duplicateList,
+    selectList,
+    reorderLists,
 
-    // item modes
-    assignItemToModes,
-    setItemModes,
-    toggleItemMode,
+    setMotion,
+    setSound,
 
-    // mode ops
-    changeMode,
+    wipeAll,
+
+    onCompletedOnce,
+
     createMode,
     renameMode,
     updateMode,
     deleteMode,
     duplicateMode,
+    changeMode,
     openModeEditor,
 
-    // settings helpers
-    setMotion,
-    setSound,
-
-    // destructive
-    wipeAll,
-
-    // completion
-    onCompletedOnce,
-
-    // tiny helpers
     _util: {
       ensureString,
+      normalizeText,
       normalizeEmoji,
-      uniq,
-      slugifyModeKey,
-      slugifyCatKey,
-      shallowClone
+      sanitizeCategory,
+      createListRecord,
+      createItemRecord,
+      repairStateShape,
+      normalizeSettings,
+      getCompletionMeta
     }
   };
 }

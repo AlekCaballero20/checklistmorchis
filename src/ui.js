@@ -1,42 +1,26 @@
-/* =============================================================================
-  /src/ui.js — UI glue (modals, buttons, mobile-only, focus) — PRO v7.0
-  - ✅ Mobile-only enforcement (soft) + DEV bypass
-  - ✅ Modal manager robusto:
-      - focus restore por modal
-      - focus trap
-      - ESC close
-      - click outside close
-      - scroll lock real
-      - close top-most only
-  - ✅ Button bindings seguros
-  - ✅ Sync settings inputs + sync visual de toggles
-  - ✅ Add flow: create item in selected target mode
-  - ✅ Edit flow: save item + add item to another mode
-  - ✅ Mode editor hooks alineados con HTML nuevo
-  - ✅ Safer:
-      - prevents double-submits
-      - handles missing els gracefully
-      - avoids duplicate listeners in repeated init
-      - better focusables filtering
-  - ✅ Better coexistence with app.js:
-      - no pelea innecesaria por listas/modos
-      - no duplicación torpe de flujos
-============================================================================= */
+/* ============================================================================
+  /src/ui.js
+  UI glue para el sistema nuevo de listas
+
+  MODELO NUEVO
+  - state.currentListId
+  - state.lists
+  - state.itemsByListId
+  - state.settings
+
+  RESPONSABILIDAD
+  - abrir / cerrar modales
+  - conectar botones
+  - sincronizar inputs
+  - crear / editar / borrar listas
+  - crear / editar / copiar items
+  - focus management
+============================================================================ */
 
 'use strict';
 
-/**
- * initUI
- * @param {Object} cfg
- * @param {Object} cfg.els  DOM refs
- * @param {Object} cfg.store { getState, setState, subscribe? }
- * @param {Object} cfg.actions actions from actions.js
- * @param {Object} cfg.fx { toast, haptic, unlockAudio }
- * @param {Object} cfg.storage { wipeAllStorage? optional }
- * @param {Function} cfg.onAfterStateChange called after actions that change state
- */
-export function initUI(cfg) {
-  const { els, store, actions, fx, storage, onAfterStateChange } = cfg || {};
+export function initUI(cfg = {}) {
+  const { els, store, actions, fx, storage, onAfterStateChange } = cfg;
   const DEV_BYPASS = isDevEnv();
 
   if (!els) {
@@ -70,12 +54,17 @@ export function initUI(cfg) {
   bindSettingsInputs({ els, store, actions, fx, onAfterStateChange });
   bindAddModal({ els, actions, fx, modal, onAfterStateChange, store });
   bindEditModal({ els, actions, fx, modal, onAfterStateChange, store });
-  bindModeEditor({ els, store, actions, fx, modal, onAfterStateChange });
+  bindListEditor({ els, store, actions, fx, modal, onAfterStateChange });
 
   store?.subscribe?.((prev, next) => {
-    if (prev?.settings !== next?.settings || prev?.data !== next?.data) {
+    if (
+      prev?.settings !== next?.settings ||
+      prev?.lists !== next?.lists ||
+      prev?.currentListId !== next?.currentListId ||
+      prev?.itemsByListId !== next?.itemsByListId
+    ) {
       syncSettingsInputs(els, next);
-      syncModeEditorSnapshot({ els, store });
+      syncListEditorSnapshot({ els, store });
     }
   });
 
@@ -90,9 +79,9 @@ export function initUI(cfg) {
   });
 }
 
-/* =========================
-   Public API
-========================= */
+/* ============================================================================
+  PUBLIC API
+============================================================================ */
 
 function createPublicAPI({ els, store, fx, actions, onAfterStateChange, modal, devBypass }) {
   return {
@@ -107,23 +96,23 @@ function createPublicAPI({ els, store, fx, actions, onAfterStateChange, modal, d
     openEdit: (opts) => modal?.open?.('edit', opts),
     closeEdit: () => modal?.close?.('edit'),
 
-    openModeEditor: (opts) => openModeEditor({
+    openListEditor: (opts) => openListEditor({
       els, store, actions, fx, modal, onAfterStateChange, ...(opts || {})
     }),
-    closeModeEditor: () => modal?.close?.('modeEditor'),
+    closeListEditor: () => modal?.close?.('listEditor'),
 
     openEditById: (id) => openEditById({ els, store, fx, modal, id }),
 
     sync: () => {
       syncSettingsInputs(els, store?.getState?.());
-      syncModeEditorSnapshot({ els, store });
+      syncListEditorSnapshot({ els, store });
     }
   };
 }
 
-/* =========================
-   Mobile-only enforcement
-========================= */
+/* ============================================================================
+  MOBILE ONLY
+============================================================================ */
 
 export function enforceMobileOnly(els, { devBypass = false } = {}) {
   if (!els) return;
@@ -162,9 +151,9 @@ function hideDesktopBlock(els) {
   els.desktopBlock.setAttribute('aria-hidden', 'true');
 }
 
-/* =========================
-   Main buttons
-========================= */
+/* ============================================================================
+  BUTTONS
+============================================================================ */
 
 function bindButtons({ els, actions, fx, storage, modal, onAfterStateChange, store }) {
   if (!els) return;
@@ -178,10 +167,10 @@ function bindButtons({ els, actions, fx, storage, modal, onAfterStateChange, sto
   bindClick(els.btnAdd, () => {
     safe(() => fx?.unlockAudio?.());
 
-    if (els.newModeTarget && els.tripMode) {
-      const currentMode = String(els.tripMode.value || 'salida');
-      if (selectHasValue(els.newModeTarget, currentMode)) {
-        els.newModeTarget.value = currentMode;
+    if (els.newModeTarget) {
+      const currentListId = getCurrentListId(store?.getState?.());
+      if (selectHasValue(els.newModeTarget, currentListId)) {
+        els.newModeTarget.value = currentListId;
       }
     }
 
@@ -206,7 +195,7 @@ function bindButtons({ els, actions, fx, storage, modal, onAfterStateChange, sto
   });
 
   bindClick(els.btnWipe, () => {
-    const ok = confirm('¿Seguro que quieres borrar TODO? (listas + progreso)');
+    const ok = confirm('¿Seguro que quieres borrar TODO?');
     if (!ok) return;
 
     safe(() => storage?.wipeAllStorage?.());
@@ -215,23 +204,23 @@ function bindButtons({ els, actions, fx, storage, modal, onAfterStateChange, sto
     onAfterStateChange?.();
   });
 
-  bindClick(resolveModeEditButton(els), () => {
+  bindClick(resolveListEditButton(els), () => {
     safe(() => fx?.unlockAudio?.());
-    openModeEditor({
+    openListEditor({
       els,
       store,
       actions,
       fx,
       modal,
       onAfterStateChange,
-      returnFocusEl: resolveModeEditButton(els)
+      returnFocusEl: resolveListEditButton(els)
     });
-  }, '__modeEditMainClick__');
+  }, '__listEditMainClick__');
 }
 
-/* =========================
-   Overlay events / focus trap
-========================= */
+/* ============================================================================
+  OVERLAYS / MODALS
+============================================================================ */
 
 function bindOverlays({ els, modal }) {
   if (!els || !modal) return;
@@ -239,12 +228,12 @@ function bindOverlays({ els, modal }) {
   bindClick(els.btnCloseSettings, () => modal.close('settings'));
   bindClick(els.btnCloseAdd, () => modal.close('add'));
   bindClick(els.btnCloseEdit, () => modal.close('edit'));
-  bindClick(resolveModeEditorCloseButton(els), () => modal.close('modeEditor'), '__modeEditorClose__');
+  bindClick(resolveListEditorCloseButton(els), () => modal.close('listEditor'), '__listEditorClose__');
 
   bindOverlayDismiss(els.settingsOverlay, () => modal.close('settings'));
   bindOverlayDismiss(els.addOverlay, () => modal.close('add'));
   bindOverlayDismiss(els.editOverlay, () => modal.close('edit'));
-  bindOverlayDismiss(resolveModeEditorOverlay(els), () => modal.close('modeEditor'));
+  bindOverlayDismiss(resolveListEditorOverlay(els), () => modal.close('listEditor'));
 
   bindOnce(window, '__ui_keydown_escape__', 'keydown', (e) => {
     if (e.key !== 'Escape') return;
@@ -291,29 +280,25 @@ function bindOverlayDismiss(overlay, onClose) {
   }, '__overlayDismiss__');
 }
 
-/* =========================
-   Modal Controller
-========================= */
-
 function createModalController({ els, fx }) {
-  const modeEditorOverlay = resolveModeEditorOverlay(els);
+  const listEditorOverlay = resolveListEditorOverlay(els);
 
   const overlays = {
     settings: els?.settingsOverlay || null,
     add: els?.addOverlay || null,
     edit: els?.editOverlay || null,
-    modeEditor: modeEditorOverlay || null
+    listEditor: listEditorOverlay || null
   };
 
   const defaultFocus = {
     settings: () => getFocusables(overlays.settings)[0] || overlays.settings,
     add: () => els?.newName || getFocusables(overlays.add)[0] || overlays.add,
     edit: () => els?.editName || getFocusables(overlays.edit)[0] || overlays.edit,
-    modeEditor: () =>
-      resolveModeEditorNameInput(els) ||
-      resolveModeEditorSelect(els) ||
-      getFocusables(overlays.modeEditor)[0] ||
-      overlays.modeEditor
+    listEditor: () =>
+      resolveListEditorNameInput(els) ||
+      resolveListEditorSelect(els) ||
+      getFocusables(overlays.listEditor)[0] ||
+      overlays.listEditor
   };
 
   let stack = [];
@@ -336,7 +321,6 @@ function createModalController({ els, fx }) {
       document.documentElement.classList.remove('modal-open');
       document.body.classList.remove('modal-open');
       document.body.style.top = '';
-
       window.scrollTo?.(0, Number.isFinite(scrollY) ? scrollY : 0);
 
       delete document.body.dataset.modalScrollY;
@@ -362,7 +346,7 @@ function createModalController({ els, fx }) {
     overlay.classList.add('show');
     overlay.setAttribute('aria-hidden', 'false');
 
-    stack = stack.filter(x => x !== name);
+    stack = stack.filter((x) => x !== name);
     stack.push(name);
 
     if (stack.length === 1) lockScroll();
@@ -393,7 +377,7 @@ function createModalController({ els, fx }) {
 
     cleanupModalClose(name, overlay);
 
-    stack = stack.filter(x => x !== name);
+    stack = stack.filter((x) => x !== name);
 
     if (!stack.length) {
       unlockScroll();
@@ -448,23 +432,27 @@ function prepareModalOpen(name, els, overlay) {
   if (name === 'add') {
     if (els?.newName) els.newName.value = '';
     if (els?.newEmoji) els.newEmoji.value = '';
-    if (els?.newCat && selectHasValue(els.newCat, 'otros') && !els.newCat.value) {
-      els.newCat.value = 'otros';
+    if (els?.newCat && selectHasValue(els.newCat, 'general') && !els.newCat.value) {
+      els.newCat.value = 'general';
     }
-    if (els?.newModeTarget && els?.tripMode) {
-      const currentMode = String(els.tripMode.value || 'salida');
-      if (selectHasValue(els.newModeTarget, currentMode)) {
-        els.newModeTarget.value = currentMode;
+    if (els?.newModeTarget) {
+      const currentListId = getCurrentListId();
+      if (selectHasValue(els.newModeTarget, currentListId)) {
+        els.newModeTarget.value = currentListId;
       }
     }
   }
 
   if (name === 'edit') {
-    if (overlay.dataset && overlay.dataset.editingId == null) overlay.dataset.editingId = '';
+    if (overlay.dataset && overlay.dataset.editingId == null) {
+      overlay.dataset.editingId = '';
+    }
   }
 
-  if (name === 'modeEditor') {
-    if (overlay.dataset && overlay.dataset.modeKey == null) overlay.dataset.modeKey = '';
+  if (name === 'listEditor') {
+    if (overlay.dataset && overlay.dataset.listId == null) {
+      overlay.dataset.listId = '';
+    }
   }
 }
 
@@ -475,21 +463,23 @@ function cleanupModalClose(name, overlay) {
     overlay.dataset.editingId = '';
   }
 
-  if (name === 'modeEditor' && overlay.dataset) {
-    overlay.dataset.modeKey = '';
+  if (name === 'listEditor' && overlay.dataset) {
+    overlay.dataset.listId = '';
   }
 }
 
-/* =========================
-   Settings inputs
-========================= */
+/* ============================================================================
+  SETTINGS
+============================================================================ */
 
 function syncSettingsInputs(els, state) {
   if (!els) return;
-  const s = state?.settings || {};
 
-  if (els.tripMode && selectHasValue(els.tripMode, s.tripMode || 'salida')) {
-    els.tripMode.value = s.tripMode || 'salida';
+  const s = state?.settings || {};
+  const currentListId = getCurrentListId(state);
+
+  if (els.tripMode && selectHasValue(els.tripMode, currentListId)) {
+    els.tripMode.value = currentListId;
   }
 
   const motion = !!s.motion;
@@ -510,12 +500,12 @@ function syncSettingsInputs(els, state) {
     els.streakChip.textContent = `✨ ${Number.isFinite(n) ? n : 0}`;
   }
 
-  if (els.newModeTarget && els.tripMode && selectHasValue(els.newModeTarget, s.tripMode || 'salida')) {
-    els.newModeTarget.value = s.tripMode || 'salida';
+  if (els.newModeTarget && selectHasValue(els.newModeTarget, currentListId)) {
+    els.newModeTarget.value = currentListId;
   }
 
-  if (els.dupMode && els.tripMode && selectHasValue(els.dupMode, s.tripMode || 'salida') && !els.dupMode.value) {
-    els.dupMode.value = s.tripMode || 'salida';
+  if (els.dupMode && selectHasValue(els.dupMode, currentListId) && !els.dupMode.value) {
+    els.dupMode.value = currentListId;
   }
 }
 
@@ -523,8 +513,8 @@ function bindSettingsInputs({ els, store, actions, fx, onAfterStateChange }) {
   if (!els) return;
 
   bindChange(els.tripMode, () => {
-    const mode = String(els.tripMode.value || 'salida');
-    safe(() => actions?.changeMode?.(mode));
+    const listId = String(els.tripMode.value || '').trim();
+    safe(() => actions?.selectList?.(listId));
     onAfterStateChange?.();
   });
 
@@ -539,7 +529,7 @@ function bindSettingsInputs({ els, store, actions, fx, onAfterStateChange }) {
     }
 
     safe(() => fx?.toast?.(checked ? 'Animaciones ON ✨' : 'Animaciones OFF 🧊'));
-    safe(() => fx?.haptic?.(12));
+    safe(() => fx?.haptic?.(10));
     onAfterStateChange?.();
   });
 
@@ -559,9 +549,9 @@ function bindSettingsInputs({ els, store, actions, fx, onAfterStateChange }) {
   });
 }
 
-/* =========================
-   Add modal
-========================= */
+/* ============================================================================
+  ADD MODAL
+============================================================================ */
 
 function bindAddModal({ els, actions, fx, modal, onAfterStateChange, store }) {
   if (!els) return;
@@ -572,16 +562,21 @@ function bindAddModal({ els, actions, fx, modal, onAfterStateChange, store }) {
     if (busy) return;
     busy = true;
 
-    const name = (els.newName?.value || '').trim();
+    const text = (els.newName?.value || '').trim();
     const emoji = (els.newEmoji?.value || '').trim();
-    const cat = String(els.newCat?.value || 'otros');
-    const targetMode = String(
+    const category = String(els.newCat?.value || 'general');
+    const listId = String(
       els.newModeTarget?.value ||
-      store?.getState?.()?.settings?.tripMode ||
-      'salida'
+      getCurrentListId(store?.getState?.()) ||
+      ''
     );
 
-    const res = actions?.createItem?.({ name, emoji, cat, targetMode });
+    const res = actions?.createItem?.({
+      text,
+      emoji,
+      category,
+      listId
+    });
 
     if (!res?.ok) {
       shakeIfMotion({ store, overlay: els.addOverlay });
@@ -593,7 +588,9 @@ function bindAddModal({ els, actions, fx, modal, onAfterStateChange, store }) {
     modal?.close?.('add');
     onAfterStateChange?.();
 
-    setTimeout(() => { busy = false; }, 120);
+    setTimeout(() => {
+      busy = false;
+    }, 120);
   };
 
   bindClick(els.btnCreate, () => {
@@ -607,15 +604,15 @@ function bindAddModal({ els, actions, fx, modal, onAfterStateChange, store }) {
   bindEnterEsc(els.newModeTarget, () => els.btnCreate?.click(), () => modal?.close?.('add'));
 }
 
-/* =========================
-   Edit modal
-========================= */
+/* ============================================================================
+  EDIT MODAL
+============================================================================ */
 
 function bindEditModal({ els, actions, fx, modal, onAfterStateChange, store }) {
   if (!els) return;
 
   let busySave = false;
-  let busyAdd = false;
+  let busyCopy = false;
 
   const getEditingId = () => String(els.editOverlay?.dataset?.editingId || '').trim();
 
@@ -629,11 +626,11 @@ function bindEditModal({ els, actions, fx, modal, onAfterStateChange, store }) {
       return;
     }
 
-    const name = (els.editName?.value || '').trim();
+    const text = (els.editName?.value || '').trim();
     const emoji = (els.editEmoji?.value || '').trim();
-    const cat = String(els.editCat?.value || 'otros');
+    const category = String(els.editCat?.value || 'general');
 
-    const res = actions?.editItem?.(id, { name, emoji, cat });
+    const res = actions?.editItem?.(id, { text, emoji, category });
 
     if (!res?.ok) {
       shakeIfMotion({ store, overlay: els.editOverlay });
@@ -644,62 +641,63 @@ function bindEditModal({ els, actions, fx, modal, onAfterStateChange, store }) {
 
     modal?.close?.('edit');
     onAfterStateChange?.();
-    setTimeout(() => { busySave = false; }, 120);
+
+    setTimeout(() => {
+      busySave = false;
+    }, 120);
   };
 
-  const doAddToMode = () => {
-    if (busyAdd) return;
-    busyAdd = true;
+  const doCopyToList = () => {
+    if (busyCopy) return;
+    busyCopy = true;
 
     const id = getEditingId();
     if (!id) {
-      busyAdd = false;
+      busyCopy = false;
       return;
     }
 
-    const currentMode = getCurrentMode(store?.getState?.() || {});
-    const toMode = String(els.dupMode?.value || '').trim();
+    const currentListId = getCurrentListId(store?.getState?.());
+    const targetListId = String(els.dupMode?.value || '').trim();
 
-    if (!toMode) {
+    if (!targetListId) {
       safe(() => fx?.toast?.('Escoge una lista 🙃'));
       safe(() => fx?.haptic?.(14));
-      busyAdd = false;
+      busyCopy = false;
       return;
     }
 
-    if (toMode === currentMode) {
-      safe(() => fx?.toast?.('Ese item ya está en esta lista 😌'));
+    if (targetListId === currentListId) {
+      safe(() => fx?.toast?.('Ese ítem ya está en esta lista 😌'));
       safe(() => fx?.haptic?.(8));
-      busyAdd = false;
+      busyCopy = false;
       return;
     }
 
     let res = null;
 
-    if (typeof actions?.assignItemToModes === 'function') {
-      res = actions.assignItemToModes(id, [toMode]);
-    } else if (typeof actions?.addItemToMode === 'function') {
-      res = actions.addItemToMode(id, toMode);
+    if (typeof actions?.copyItemToList === 'function') {
+      res = actions.copyItemToList(id, targetListId);
+    } else if (typeof actions?.duplicateItem === 'function') {
+      res = actions.duplicateItem(id, { listId: targetListId });
     } else {
       res = { ok: false, reason: 'MISSING_HANDLER' };
     }
 
     if (!res?.ok) {
-      if (res?.reason === 'ALREADY_EXISTS') {
-        safe(() => fx?.toast?.('Ese item ya existe en esa lista 😌'));
-        safe(() => fx?.haptic?.(8));
-      } else {
-        safe(() => fx?.toast?.('No se pudo agregar a esa lista 🙄'));
-        safe(() => fx?.haptic?.(14));
-      }
-      busyAdd = false;
+      safe(() => fx?.toast?.('No se pudo agregar a esa lista 🙄'));
+      safe(() => fx?.haptic?.(14));
+      busyCopy = false;
       return;
     }
 
     safe(() => fx?.toast?.('Agregado a la otra lista ✅'));
     safe(() => fx?.haptic?.(10));
     onAfterStateChange?.();
-    setTimeout(() => { busyAdd = false; }, 120);
+
+    setTimeout(() => {
+      busyCopy = false;
+    }, 120);
   };
 
   bindClick(els.btnSaveEdit, () => {
@@ -709,7 +707,7 @@ function bindEditModal({ els, actions, fx, modal, onAfterStateChange, store }) {
 
   bindClick(els.btnAddToMode, () => {
     safe(() => fx?.unlockAudio?.());
-    doAddToMode();
+    doCopyToList();
   });
 
   bindEnterEsc(els.editName, () => els.btnSaveEdit?.click(), () => modal?.close?.('edit'));
@@ -718,17 +716,17 @@ function bindEditModal({ els, actions, fx, modal, onAfterStateChange, store }) {
   bindEnterEsc(els.dupMode, () => els.btnAddToMode?.click(), () => modal?.close?.('edit'));
 }
 
-/* =========================
-   Mode editor
-========================= */
+/* ============================================================================
+  LIST EDITOR
+============================================================================ */
 
-function bindModeEditor({ els, store, actions, fx, modal, onAfterStateChange }) {
+function bindListEditor({ els, store, actions, fx, modal, onAfterStateChange }) {
   if (!els) return;
 
-  const trigger = resolveModeEditButton(els);
+  const trigger = resolveListEditButton(els);
   if (trigger) {
     bindClick(trigger, () => {
-      openModeEditor({
+      openListEditor({
         els,
         store,
         actions,
@@ -737,62 +735,62 @@ function bindModeEditor({ els, store, actions, fx, modal, onAfterStateChange }) 
         onAfterStateChange,
         returnFocusEl: trigger
       });
-    }, '__modeEditorTrigger__');
+    }, '__listEditorTrigger__');
   }
 
-  const saveBtn = resolveModeEditorSaveButton(els);
-  const deleteBtn = resolveModeEditorDeleteButton(els);
+  const saveBtn = resolveListEditorSaveButton(els);
+  const deleteBtn = resolveListEditorDeleteButton(els);
 
   bindClick(saveBtn, () => {
-    saveModeEditor({ els, store, actions, fx, modal, onAfterStateChange });
-  }, '__modeEditorSave__');
+    saveListEditor({ els, store, actions, fx, modal, onAfterStateChange });
+  }, '__listEditorSave__');
 
   bindClick(deleteBtn, () => {
-    deleteModeEditor({ els, store, actions, fx, modal, onAfterStateChange });
-  }, '__modeEditorDelete__');
+    deleteListEditor({ els, store, actions, fx, modal, onAfterStateChange });
+  }, '__listEditorDelete__');
 
-  bindChange(resolveModeEditorSelect(els), () => {
-    syncModeEditorSnapshot({ els, store, preferSelected: true });
-  }, '__modeEditorSelectChange__');
+  bindChange(resolveListEditorSelect(els), () => {
+    syncListEditorSnapshot({ els, store, preferSelected: true });
+  }, '__listEditorSelectChange__');
 
   bindEnterEsc(
-    resolveModeEditorNameInput(els),
-    () => resolveModeEditorSaveButton(els)?.click?.(),
-    () => modal?.close?.('modeEditor')
+    resolveListEditorNameInput(els),
+    () => resolveListEditorSaveButton(els)?.click?.(),
+    () => modal?.close?.('listEditor')
   );
 
   bindEnterEsc(
-    resolveModeEditorSelect(els),
-    () => resolveModeEditorSaveButton(els)?.click?.(),
-    () => modal?.close?.('modeEditor')
+    resolveListEditorSelect(els),
+    () => resolveListEditorSaveButton(els)?.click?.(),
+    () => modal?.close?.('listEditor')
   );
 }
 
-function openModeEditor({ els, store, actions, fx, modal, onAfterStateChange, returnFocusEl } = {}) {
+function openListEditor({ els, store, actions, fx, modal, onAfterStateChange, returnFocusEl } = {}) {
   const state = store?.getState?.() || {};
-  const currentMode = getCurrentMode(state);
+  const currentListId = getCurrentListId(state);
 
-  if (typeof actions?.openModeEditor === 'function') {
-    safe(() => actions.openModeEditor(currentMode));
+  if (typeof actions?.getListInfo === 'function') {
+    safe(() => actions.getListInfo(currentListId));
   }
 
-  const overlay = resolveModeEditorOverlay(els);
+  const overlay = resolveListEditorOverlay(els);
   if (overlay && modal) {
-    const selectEl = resolveModeEditorSelect(els);
+    const selectEl = resolveListEditorSelect(els);
 
     if (overlay.dataset) {
-      overlay.dataset.modeKey = currentMode;
+      overlay.dataset.listId = currentListId;
     }
 
-    if (selectEl && selectHasValue(selectEl, currentMode)) {
-      selectEl.value = String(currentMode || '');
+    if (selectEl && selectHasValue(selectEl, currentListId)) {
+      selectEl.value = String(currentListId || '');
     }
 
-    syncModeEditorSnapshot({ els, store, modeKey: currentMode });
+    syncListEditorSnapshot({ els, store, listId: currentListId });
 
-    modal.open('modeEditor', {
+    modal.open('listEditor', {
       returnFocusEl: returnFocusEl || document.activeElement,
-      focusEl: resolveModeEditorNameInput(els) || selectEl
+      focusEl: resolveListEditorNameInput(els) || selectEl
     });
     return;
   }
@@ -801,92 +799,167 @@ function openModeEditor({ els, store, actions, fx, modal, onAfterStateChange, re
   safe(() => fx?.haptic?.(10));
 }
 
-function saveModeEditor({ els, store, actions, fx, modal, onAfterStateChange }) {
+function saveListEditor({ els, store, actions, fx, modal, onAfterStateChange }) {
   const state = store?.getState?.() || {};
-  const overlay = resolveModeEditorOverlay(els);
-  const selectEl = resolveModeEditorSelect(els);
-  const nameInput = resolveModeEditorNameInput(els);
+  const overlay = resolveListEditorOverlay(els);
+  const selectEl = resolveListEditorSelect(els);
+  const nameInput = resolveListEditorNameInput(els);
 
-  const modeKey = String(
-    overlay?.dataset?.modeKey ||
+  const selectedListId = String(
+    overlay?.dataset?.listId ||
     selectEl?.value ||
-    getCurrentMode(state) ||
+    getCurrentListId(state) ||
     ''
   ).trim();
 
-  if (!modeKey) {
-    safe(() => fx?.toast?.('No encontré la lista para editar 😑'));
-    safe(() => fx?.haptic?.(14));
-    return;
-  }
+  const typedName = String(nameInput?.value || '').trim();
 
-  const newName = String(nameInput?.value || '').trim();
-
-  if (!newName) {
+  if (!typedName) {
     shakeIfMotion({ store, overlay });
     safe(() => fx?.toast?.('Ponle un nombre a la lista'));
-    return;
-  }
-
-  let res = null;
-
-  if (typeof actions?.updateMode === 'function') {
-    res = actions.updateMode(modeKey, { name: newName, label: `🧳 ${newName}` });
-  } else if (typeof actions?.renameMode === 'function') {
-    res = actions.renameMode(modeKey, newName);
-  } else {
-    safeSetState(store, (prev) => {
-      const next = { ...(prev || {}) };
-      const data = { ...(next.data || {}) };
-      const modes = { ...(data.modes || {}) };
-
-      const prevMode = { ...(modes[modeKey] || {}) };
-      modes[modeKey] = { ...prevMode, name: newName, label: `🧳 ${newName}` };
-
-      data.modes = modes;
-      next.data = data;
-      return next;
-    });
-
-    res = { ok: true };
-  }
-
-  if (!res?.ok) {
-    shakeIfMotion({ store, overlay });
-    safe(() => fx?.toast?.('No se pudo guardar la lista 🙄'));
     safe(() => fx?.haptic?.(14));
     return;
   }
 
-  modal?.close?.('modeEditor');
-  safe(() => fx?.toast?.('Lista actualizada ✨'));
+  const selectedList = getListById(selectedListId, state);
+  const existingListWithSameName = findListByDisplayName(state, typedName);
+
+  if (existingListWithSameName && existingListWithSameName.id !== selectedListId) {
+    if (selectEl && selectHasValue(selectEl, existingListWithSameName.id)) {
+      selectEl.value = existingListWithSameName.id;
+    }
+    if (overlay?.dataset) overlay.dataset.listId = existingListWithSameName.id;
+    syncListEditorSnapshot({ els, store, listId: existingListWithSameName.id });
+
+    safe(() => fx?.toast?.('Ya existe una lista con ese nombre 😌'));
+    safe(() => fx?.haptic?.(8));
+    return;
+  }
+
+  if (selectedList && normalizeText(typedName) === normalizeText(selectedList.name || '')) {
+    const res = updateExistingList({
+      actions,
+      store,
+      listId: selectedListId,
+      newName: typedName
+    });
+
+    if (!res?.ok) {
+      shakeIfMotion({ store, overlay });
+      safe(() => fx?.toast?.('No se pudo guardar la lista 🙄'));
+      safe(() => fx?.haptic?.(14));
+      return;
+    }
+
+    modal?.close?.('listEditor');
+    safe(() => fx?.toast?.('Lista actualizada ✨'));
+    safe(() => fx?.haptic?.(8));
+    onAfterStateChange?.();
+    return;
+  }
+
+  let shouldCreateNew = true;
+
+  if (selectedList) {
+    shouldCreateNew = confirm(
+      `El nombre es diferente a la lista seleccionada.\n\n` +
+      `Aceptar = crear una lista nueva llamada "${typedName}"\n` +
+      `Cancelar = renombrar la lista actual`
+    );
+  }
+
+  if (shouldCreateNew) {
+    const createRes = createNewList({
+      store,
+      actions,
+      newName: typedName
+    });
+
+    if (!createRes?.ok) {
+      shakeIfMotion({ store, overlay });
+      safe(() => fx?.toast?.('No se pudo crear la lista 🙄'));
+      safe(() => fx?.haptic?.(14));
+      return;
+    }
+
+    const newId = String(createRes.listId || '').trim();
+
+    if (overlay?.dataset) overlay.dataset.listId = newId;
+    if (selectEl && selectHasValue(selectEl, newId)) {
+      selectEl.value = newId;
+    }
+
+    if (typeof actions?.selectList === 'function' && newId) {
+      safe(() => actions.selectList(newId));
+    } else {
+      safeSetState(store, (prev) => ({
+        ...(prev || {}),
+        currentListId: newId || getCurrentListId(prev || {})
+      }));
+    }
+
+    modal?.close?.('listEditor');
+    safe(() => fx?.toast?.('Lista nueva creada ✅'));
+    safe(() => fx?.haptic?.(10));
+    onAfterStateChange?.();
+    return;
+  }
+
+  if (!selectedListId) {
+    shakeIfMotion({ store, overlay });
+    safe(() => fx?.toast?.('No encontré la lista para renombrar 😑'));
+    safe(() => fx?.haptic?.(14));
+    return;
+  }
+
+  const renameRes = updateExistingList({
+    actions,
+    store,
+    listId: selectedListId,
+    newName: typedName
+  });
+
+  if (!renameRes?.ok) {
+    shakeIfMotion({ store, overlay });
+    safe(() => fx?.toast?.('No se pudo renombrar la lista 🙄'));
+    safe(() => fx?.haptic?.(14));
+    return;
+  }
+
+  modal?.close?.('listEditor');
+  safe(() => fx?.toast?.('Lista renombrada ✨'));
   safe(() => fx?.haptic?.(8));
   onAfterStateChange?.();
 }
 
-function deleteModeEditor({ els, store, actions, fx, modal, onAfterStateChange }) {
+function deleteListEditor({ els, store, actions, fx, modal, onAfterStateChange }) {
   const state = store?.getState?.() || {};
-  const overlay = resolveModeEditorOverlay(els);
-  const selectEl = resolveModeEditorSelect(els);
+  const overlay = resolveListEditorOverlay(els);
+  const selectEl = resolveListEditorSelect(els);
 
-  const modeKey = String(
-    overlay?.dataset?.modeKey ||
+  const listId = String(
+    overlay?.dataset?.listId ||
     selectEl?.value ||
-    getCurrentMode(state) ||
+    getCurrentListId(state) ||
     ''
   ).trim();
 
-  if (!modeKey) return;
+  if (!listId) return;
 
-  const ok = confirm(`¿Borrar la lista "${modeKey}"?`);
+  const list = getListById(listId, state);
+  const label = list?.name || 'esta lista';
+
+  const ok = confirm(`¿Borrar la lista "${label}"?`);
   if (!ok) return;
 
   let res = null;
 
-  if (typeof actions?.deleteMode === 'function') {
-    res = actions.deleteMode(modeKey);
+  if (typeof actions?.deleteList === 'function') {
+    res = actions.deleteList(listId);
+  } else if (typeof actions?.deleteMode === 'function') {
+    res = actions.deleteMode(listId);
   } else {
-    safe(() => fx?.toast?.('Falta conectar deleteMode en actions.js'));
+    safe(() => fx?.toast?.('Falta conectar deleteList en actions.js'));
     safe(() => fx?.haptic?.(12));
     return;
   }
@@ -897,53 +970,49 @@ function deleteModeEditor({ els, store, actions, fx, modal, onAfterStateChange }
     return;
   }
 
-  modal?.close?.('modeEditor');
+  modal?.close?.('listEditor');
   onAfterStateChange?.();
 }
 
-function syncModeEditorSnapshot({ els, store, modeKey = '', preferSelected = false } = {}) {
+function syncListEditorSnapshot({ els, store, listId = '', preferSelected = false } = {}) {
   const state = store?.getState?.() || {};
-  const overlay = resolveModeEditorOverlay(els);
-  const selectEl = resolveModeEditorSelect(els);
-  const nameInput = resolveModeEditorNameInput(els);
-  const countEl = resolveModeItemsCountEl(els);
+  const overlay = resolveListEditorOverlay(els);
+  const selectEl = resolveListEditorSelect(els);
+  const nameInput = resolveListEditorNameInput(els);
+  const countEl = resolveListItemsCountEl(els);
 
-  const resolvedModeKey = String(
-    modeKey ||
+  const resolvedListId = String(
+    listId ||
     (preferSelected ? selectEl?.value : '') ||
-    overlay?.dataset?.modeKey ||
+    overlay?.dataset?.listId ||
     selectEl?.value ||
-    getCurrentMode(state) ||
+    getCurrentListId(state) ||
     ''
   ).trim();
 
-  if (!resolvedModeKey) return;
+  if (!resolvedListId) return;
 
-  if (overlay?.dataset) overlay.dataset.modeKey = resolvedModeKey;
+  if (overlay?.dataset) overlay.dataset.listId = resolvedListId;
 
-  const modeData = getModeData(state, resolvedModeKey);
+  const list = getListById(resolvedListId, state);
+  const items = getItemsForList(state, resolvedListId);
 
   if (nameInput && document.activeElement !== nameInput) {
-    nameInput.value = String(
-      stripLeadingEmoji(modeData?.label || modeData?.name || resolvedModeKey || '')
-    );
+    nameInput.value = String(list?.name || '');
   }
 
-  if (selectEl && selectHasValue(selectEl, resolvedModeKey)) {
-    selectEl.value = resolvedModeKey;
+  if (selectEl && selectHasValue(selectEl, resolvedListId)) {
+    selectEl.value = resolvedListId;
   }
 
   if (countEl) {
-    const count = Array.isArray(modeData?.items)
-      ? modeData.items.length
-      : getItemsForMode(state, resolvedModeKey).length;
-    countEl.textContent = String(count);
+    countEl.textContent = String(items.length);
   }
 }
 
-/* =========================
-   Edit convenience
-========================= */
+/* ============================================================================
+  EDIT CONVENIENCE
+============================================================================ */
 
 export function openEditById({ els, store, fx, modal, id }) {
   if (!els?.editOverlay) return;
@@ -951,30 +1020,29 @@ export function openEditById({ els, store, fx, modal, id }) {
   const cleanId = String(id ?? '').trim();
   if (!cleanId) return;
 
-  const s = store?.getState?.() || {};
-  const mode = getCurrentMode(s);
+  const state = store?.getState?.() || {};
+  const currentListId = getCurrentListId(state);
+  const items = getItemsForList(state, currentListId);
+  const item = items.find((x) => x && String(x.id) === cleanId);
 
-  const items = getItemsForMode(s, mode);
-  const it = items.find(x => x && String(x.id) === cleanId);
-
-  if (!it) {
-    safe(() => fx?.toast?.('No encontré ese item 🤨'));
+  if (!item) {
+    safe(() => fx?.toast?.('No encontré ese ítem 🤨'));
     safe(() => fx?.haptic?.(14));
     return;
   }
 
   els.editOverlay.dataset.editingId = cleanId;
 
-  if (els.editName) els.editName.value = String(it.name || '');
-  if (els.editEmoji) els.editEmoji.value = String(it.emoji || '');
-  if (els.editCat && selectHasValue(els.editCat, String(it.cat || 'otros'))) {
-    els.editCat.value = String(it.cat || 'otros');
+  if (els.editName) els.editName.value = String(item.text || '');
+  if (els.editEmoji) els.editEmoji.value = String(item.emoji || '');
+  if (els.editCat && selectHasValue(els.editCat, String(item.category || 'general'))) {
+    els.editCat.value = String(item.category || 'general');
   }
 
   if (els.dupMode) {
-    const currentMode = String(mode || 'salida');
-    if (selectHasValue(els.dupMode, currentMode)) {
-      els.dupMode.value = currentMode;
+    const current = String(currentListId || '');
+    if (selectHasValue(els.dupMode, current)) {
+      els.dupMode.value = current;
     }
   }
 
@@ -984,113 +1052,199 @@ export function openEditById({ els, store, fx, modal, id }) {
   });
 }
 
-/* =========================
-   Mode-aware access
-========================= */
+/* ============================================================================
+  STATE ACCESS HELPERS
+============================================================================ */
 
-function getCurrentMode(state) {
-  return String(state?.settings?.tripMode || state?.data?.mode || 'salida');
+function getCurrentListId(state) {
+  return String(state?.currentListId || '').trim();
 }
 
-function getItemsForMode(state, mode) {
-  if (state?.data?.itemsByMode && typeof state.data.itemsByMode === 'object') {
-    const arr = state.data.itemsByMode[mode];
-    return Array.isArray(arr) ? arr : [];
-  }
-  return Array.isArray(state?.data?.items) ? state.data.items : [];
+function getListById(listId, state) {
+  const cleanId = String(listId || '').trim();
+  const lists = Array.isArray(state?.lists) ? state.lists : [];
+  return lists.find((list) => String(list?.id || '') === cleanId) || null;
 }
 
-function getModeData(state, mode) {
-  const key = String(mode || '').trim();
-  if (!key) return null;
+function getItemsForList(state, listId) {
+  const cleanId = String(listId || '').trim();
+  const map = state?.itemsByListId && typeof state.itemsByListId === 'object'
+    ? state.itemsByListId
+    : {};
 
-  if (state?.data?.modes && typeof state.data.modes === 'object' && state.data.modes[key]) {
-    return {
-      ...state.data.modes[key],
-      items: getItemsForMode(state, key)
-    };
-  }
-
-  if (state?.data?.modesById && typeof state.data.modesById === 'object' && state.data.modesById[key]) {
-    return {
-      ...state.data.modesById[key],
-      items: getItemsForMode(state, key)
-    };
-  }
-
-  return {
-    key,
-    name: key,
-    label: key,
-    items: getItemsForMode(state, key)
-  };
+  return Array.isArray(map[cleanId]) ? map[cleanId] : [];
 }
 
-/* =========================
-   Resolver helpers
-========================= */
+function findListByDisplayName(state, targetName) {
+  const wanted = normalizeText(targetName);
+  const lists = Array.isArray(state?.lists) ? state.lists : [];
 
-function resolveModeEditorOverlay(els) {
+  for (const list of lists) {
+    const displayName = String(list?.name || '').trim();
+    if (normalizeText(displayName) === wanted) {
+      return list;
+    }
+  }
+
+  return null;
+}
+
+function normalizeText(value = '') {
+  return String(value)
+    .normalize('NFD')
+    .replace(/[\u0300-\u036f]/g, '')
+    .replace(/\s+/g, ' ')
+    .trim()
+    .toLowerCase();
+}
+
+function updateExistingList({ actions, store, listId, newName }) {
+  if (!listId || !newName) return { ok: false, reason: 'INVALID_DATA' };
+
+  let res = null;
+
+  if (typeof actions?.updateList === 'function') {
+    res = actions.updateList(listId, { name: newName });
+  } else if (typeof actions?.renameList === 'function') {
+    res = actions.renameList(listId, newName);
+  } else if (typeof actions?.updateMode === 'function') {
+    res = actions.updateMode(listId, { name: newName });
+  } else if (typeof actions?.renameMode === 'function') {
+    res = actions.renameMode(listId, newName);
+  } else {
+    safeSetState(store, (prev) => {
+      const next = { ...(prev || {}) };
+      next.lists = Array.isArray(next.lists)
+        ? next.lists.map((list) => (
+            String(list?.id || '') === String(listId)
+              ? { ...list, name: newName }
+              : list
+          ))
+        : [];
+      return next;
+    });
+
+    res = { ok: true, listId };
+  }
+
+  return res || { ok: false };
+}
+
+function createNewList({ store, actions, newName }) {
+  if (!newName) return { ok: false, reason: 'EMPTY_NAME' };
+
+  let res = null;
+
+  if (typeof actions?.createList === 'function') {
+    res = actions.createList({ name: newName });
+    if (res?.ok) return res;
+  }
+
+  if (typeof actions?.createMode === 'function') {
+    res = actions.createMode({ name: newName });
+    if (res?.ok) {
+      return {
+        ...res,
+        listId: res.listId || res.modeKey || null
+      };
+    }
+  }
+
+  const id = `list_${Math.random().toString(16).slice(2)}${Date.now().toString(16)}`;
+
+  safeSetState(store, (prev) => {
+    const next = { ...(prev || {}) };
+    const lists = Array.isArray(next.lists) ? [...next.lists] : [];
+    const itemsByListId =
+      next.itemsByListId && typeof next.itemsByListId === 'object'
+        ? { ...next.itemsByListId }
+        : {};
+
+    lists.unshift({
+      id,
+      name: newName,
+      icon: '🧾',
+      createdAt: new Date().toISOString(),
+      updatedAt: new Date().toISOString()
+    });
+
+    itemsByListId[id] = [];
+
+    next.lists = lists;
+    next.itemsByListId = itemsByListId;
+    next.currentListId = id;
+
+    return next;
+  });
+
+  return { ok: true, listId: id };
+}
+
+/* ============================================================================
+  RESOLVERS
+============================================================================ */
+
+function resolveListEditorOverlay(els) {
   return (
-    els?.modeEditorOverlay ||
+    els?.listEditorOverlay ||
     els?.modesOverlay ||
     null
   );
 }
 
-function resolveModeEditButton(els) {
+function resolveListEditButton(els) {
   return (
-    els?.btnEditMode ||
+    els?.btnEditList ||
     els?.tripModeEditBtn ||
     els?.btnTripModeEdit ||
-    els?.modeEditBtn ||
+    els?.listEditBtn ||
     els?.btnManageModes ||
     null
   );
 }
 
-function resolveModeEditorCloseButton(els) {
+function resolveListEditorCloseButton(els) {
   return (
-    els?.btnCloseModeEditor ||
+    els?.btnCloseListEditor ||
     els?.btnCloseModes ||
     null
   );
 }
 
-function resolveModeEditorSaveButton(els) {
+function resolveListEditorSaveButton(els) {
   return (
-    els?.btnSaveModeEditor ||
+    els?.btnSaveListEditor ||
     els?.btnSaveMode ||
     els?.btnCreateMode ||
     null
   );
 }
 
-function resolveModeEditorDeleteButton(els) {
+function resolveListEditorDeleteButton(els) {
   return (
-    els?.btnDeleteModeEditor ||
+    els?.btnDeleteListEditor ||
     els?.btnDeleteMode ||
     null
   );
 }
 
-function resolveModeEditorNameInput(els) {
+function resolveListEditorNameInput(els) {
   return (
-    els?.modeNameInput ||
+    els?.listNameInput ||
     els?.modeEditorName ||
     els?.newModeName ||
     null
   );
 }
 
-function resolveModeEditorSelect(els) {
+function resolveListEditorSelect(els) {
   return (
     els?.modeEditorSelect ||
     null
   );
 }
 
-function resolveModeItemsCountEl(els) {
+function resolveListItemsCountEl(els) {
   return (
     els?.modeItemsCount ||
     null
@@ -1099,18 +1253,12 @@ function resolveModeItemsCountEl(els) {
 
 function selectHasValue(selectEl, value) {
   if (!selectEl || !('options' in selectEl)) return false;
-  return Array.from(selectEl.options || []).some(opt => String(opt.value) === String(value));
+  return Array.from(selectEl.options || []).some((opt) => String(opt.value) === String(value));
 }
 
-function stripLeadingEmoji(text = '') {
-  return String(text)
-    .replace(/^[^\p{L}\p{N}]+/u, '')
-    .trim();
-}
-
-/* =========================
-   Generic helpers
-========================= */
+/* ============================================================================
+  GENERIC HELPERS
+============================================================================ */
 
 function bindEnterEsc(el, onEnter, onEsc) {
   if (!el) return;
@@ -1209,7 +1357,7 @@ function getFocusables(root) {
       'textarea:not([disabled])',
       '[tabindex]:not([tabindex="-1"])'
     ].join(', ')
-  )).filter(el => {
+  )).filter((el) => {
     if (!isElementVisible(el)) return false;
     if (el.getAttribute('aria-hidden') === 'true') return false;
     if (el.closest?.('[aria-hidden="true"]')) return false;
