@@ -1,258 +1,645 @@
 /* =============================================================================
-  /styles/base.css — Base + Reset + A11y (Light) — POLISHED
-  - Light-only foundations (Musicala rule)
-  - Modern reset + focus-visible
-  - Safe-area helpers
-  - No max-width constraints here
+  /styles/base.css
+  Base + Reset + Accessibility + Mobile foundations
+  - Mobile-first
+  - Light-only
+  - Safe-area aware
+  - Compatible with theme.css tokens
+  - No component styling here
 ============================================================================= */
 
 :root{
-  /* Legacy / brand aliases (keep for compatibility) */
-  --mozart:#0C41C4;
-  --bach:#220A63;
-  --brahms:#CE0071;
+  /* --------------------------------------------------------------------------
+     Compatibility fallbacks
+     theme.css should provide the real design system
+  -------------------------------------------------------------------------- */
+  --mozart: #7c5cff;
+  --bach: #5b47ea;
+  --brahms: #ff6fa9;
 
-  /* Neutral UI (fallbacks; primary tokens live in theme.css) */
-  --bg:#f7f8fc;
-  --panel:#ffffff;
-  --panel2:#fbfcff;
+  --bg: #f6f7fb;
+  --bg2: #f1f3f9;
+  --panel: rgba(255,255,255,.92);
+  --panel2: rgba(255,255,255,.82);
 
-  --ink:#101828;
-  --muted:#667085;
-  --line:#e7e9f3;
+  --ink: #161a2d;
+  --text: var(--ink);
+  --textStrong: #0d1020;
+  --textSubtle: #3f475f;
+  --muted: rgba(22,26,45,.68);
+  --muted2: rgba(22,26,45,.52);
 
-  --shadow: 0 12px 30px rgba(16,24,40,.12);
-  --shadow2: 0 8px 18px rgba(16,24,40,.10);
+  --line: rgba(22,26,45,.10);
+  --line2: rgba(22,26,45,.07);
+
+  --shadow: 0 12px 30px rgba(28,34,66,.10);
+  --shadow2: 0 18px 40px rgba(28,34,66,.12);
 
   --radius: 18px;
-  --radius2: 22px;
+  --radius2: 24px;
 
-  /* Tap + spacing tokens */
-  --tap: 44px;
+  --tap: 46px;
+  --tapSm: 38px;
+  --tapLg: 52px;
 
-  /* Safe areas (iOS) */
+  --pagePad: clamp(14px, 3.8vw, 18px);
+
+  --font:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    Arial,
+    "Noto Sans",
+    "Apple Color Emoji",
+    "Segoe UI Emoji";
+
+  --focusColor: rgba(124,92,255,.34);
+  --focusRing: 0 0 0 4px var(--focusColor);
+
   --safeTop: env(safe-area-inset-top);
+  --safeRight: env(safe-area-inset-right);
   --safeBottom: env(safe-area-inset-bottom);
+  --safeLeft: env(safe-area-inset-left);
 
-  /* Focus ring (fallback if theme.css not loaded) */
-  --focusRing: 0 0 0 4px rgba(12,65,196,.14);
+  --dur1: 120ms;
+  --dur2: 180ms;
+  --dur3: 260ms;
+  --easeOut: cubic-bezier(.16, 1, .3, 1);
+  --easeInOut: cubic-bezier(.65, 0, .35, 1);
 
-  /* Page gutters */
-  --pagePad: 14px;
-
-  /* Prefer theme.css font if present */
-  --font: ui-sans-serif, system-ui, -apple-system, Segoe UI, Roboto, Arial, "Noto Sans",
-          "Apple Color Emoji","Segoe UI Emoji";
+  --selection: rgba(124,92,255,.18);
+  --selectionText: var(--textStrong);
 }
 
-/* =========================
-   Reset / Defaults
-========================= */
+/* =============================================================================
+  Reset
+============================================================================= */
 
 *,
 *::before,
-*::after{ box-sizing:border-box; }
-
-html, body{
-  height: 100%;
-  width: 100%;
-  margin: 0;
-  padding: 0;
+*::after{
+  box-sizing: border-box;
 }
 
 html{
-  /* Prevent iOS text autosizing surprises */
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+  padding: 0;
+
   -webkit-text-size-adjust: 100%;
   text-size-adjust: 100%;
-
-  /* Smooth scroll only if allowed */
   scroll-behavior: smooth;
+  color-scheme: light;
 }
 
 body{
+  width: 100%;
+  min-height: 100%;
+  margin: 0;
+  padding: 0;
+
   font-family: var(--font);
-  color: var(--ink);
+  font-size: 16px;
+  line-height: 1.45;
+  font-weight: 500;
+  color: var(--text, var(--ink));
+
   background:
-    radial-gradient(1200px 800px at 18% -12%, rgba(12,65,196,.14), transparent 60%),
-    radial-gradient(900px 700px at 86% -4%, rgba(206,0,113,.12), transparent 56%),
-    radial-gradient(900px 600px at 50% 102%, rgba(34,10,99,.08), transparent 60%),
+    var(--gradSoft, radial-gradient(1200px 760px at -8% -12%, rgba(124,92,255,.16), transparent 58%), radial-gradient(860px 620px at 104% -8%, rgba(255,111,169,.12), transparent 52%), linear-gradient(180deg, rgba(255,255,255,.72), rgba(255,255,255,0) 42%)),
     var(--bg);
 
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
+  text-rendering: optimizeLegibility;
 
   overflow-x: hidden;
-
-  /* Better scroll feel */
   overscroll-behavior-y: contain;
-
-  /* A bit nicer on mobile */
   -webkit-tap-highlight-color: transparent;
-  text-rendering: geometricPrecision;
+  touch-action: manipulation;
 }
 
-/* Media elements */
-img, svg, video, canvas{
+/* Better viewport behavior on mobile browsers */
+body,
+#app,
+.app{
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* =============================================================================
+  Document defaults
+============================================================================= */
+
+h1, h2, h3, h4, h5, h6,
+p, figure, blockquote, dl, dd{
+  margin: 0;
+}
+
+ul, ol{
+  margin: 0;
+  padding: 0;
+  list-style: none;
+}
+
+hr{
+  border: 0;
+  border-top: 1px solid var(--line);
+  margin: 0;
+}
+
+small{
+  font-size: .875em;
+}
+
+strong{
+  font-weight: 700;
+  color: var(--textStrong, var(--ink));
+}
+
+em{
+  font-style: italic;
+}
+
+img,
+svg,
+video,
+canvas,
+picture{
   display: block;
   max-width: 100%;
   height: auto;
 }
 
-/* Form elements inherit font */
-button, input, select, textarea{
-  font: inherit;
-  color: inherit;
+img{
+  border-style: none;
 }
 
-/* Make buttons behave consistently */
-button{
-  background: none;
-  border: none;
-  padding: 0;
+table{
+  border-collapse: collapse;
+  border-spacing: 0;
 }
 
-/* Links */
+template{
+  display: none !important;
+}
+
+[hidden]{
+  display: none !important;
+}
+
+/* =============================================================================
+  Links
+============================================================================= */
+
 a{
   color: inherit;
   text-decoration: none;
 }
 
-/* Selection */
-::selection{
-  background: rgba(12,65,196,.18);
+a[href]{
+  transition:
+    color var(--dur2) var(--easeOut),
+    opacity var(--dur2) var(--easeOut);
 }
 
-/* Hide elements consistently */
-[hidden]{ display: none !important; }
+a[href]:active{
+  opacity: .78;
+}
 
-/* =========================
-   Focus / Accessibility
-========================= */
+/* =============================================================================
+  Forms / interactive reset
+============================================================================= */
 
-/* Avoid default outline; prefer focus-visible ring */
-:focus{ outline: none; }
+button,
+input,
+select,
+textarea{
+  font: inherit;
+  color: inherit;
+}
+
+button,
+[role="button"]{
+  -webkit-appearance: none;
+  appearance: none;
+  border: 0;
+  background: transparent;
+  padding: 0;
+  margin: 0;
+  color: inherit;
+  cursor: pointer;
+  user-select: none;
+  -webkit-user-select: none;
+  touch-action: manipulation;
+}
+
+button:disabled,
+[role="button"][aria-disabled="true"]{
+  cursor: not-allowed;
+}
+
+input,
+select,
+textarea{
+  -webkit-appearance: none;
+  appearance: none;
+  background: transparent;
+  border: 0;
+  outline: 0;
+  min-width: 0;
+}
+
+textarea{
+  resize: vertical;
+}
+
+select{
+  background-color: transparent;
+}
+
+input::placeholder,
+textarea::placeholder{
+  color: var(--fieldPlaceholder, rgba(22,26,45,.42));
+  opacity: 1;
+}
+
+input::-webkit-contacts-auto-fill-button,
+input::-webkit-credentials-auto-fill-button{
+  visibility: hidden;
+  position: absolute;
+  right: 0;
+}
+
+/* Remove inner spin buttons where not wanted */
+input[type="number"]::-webkit-outer-spin-button,
+input[type="number"]::-webkit-inner-spin-button{
+  -webkit-appearance: none;
+  margin: 0;
+}
+
+input[type="number"]{
+  -moz-appearance: textfield;
+}
+
+/* Search input cleanup */
+input[type="search"]{
+  -webkit-appearance: none;
+  appearance: none;
+}
+
+input[type="search"]::-webkit-search-decoration,
+input[type="search"]::-webkit-search-cancel-button,
+input[type="search"]::-webkit-search-results-button,
+input[type="search"]::-webkit-search-results-decoration{
+  -webkit-appearance: none;
+}
+
+/* =============================================================================
+  Selection
+============================================================================= */
+
+::selection{
+  background: var(--selection);
+  color: var(--selectionText);
+}
+
+/* =============================================================================
+  Focus states
+============================================================================= */
+
+:focus{
+  outline: none;
+}
 
 :focus-visible{
   outline: none;
   box-shadow: var(--focusRing);
 }
 
-/* Make sure keyboard users can see focus on anything interactive */
 a:focus-visible,
 button:focus-visible,
 input:focus-visible,
 select:focus-visible,
-textarea:focus-visible{
+textarea:focus-visible,
+[tabindex]:focus-visible{
   border-radius: 12px;
 }
 
-/* Skip-link: invisible until keyboard focus */
+/* Remove ugly Firefox inner border */
+::-moz-focus-inner{
+  border: 0;
+}
+
+/* =============================================================================
+  Accessibility helpers
+============================================================================= */
+
 .skiplink{
-  position: absolute;
-  left: 12px;
-  top: 10px;
+  position: fixed;
+  left: 14px;
+  top: calc(10px + var(--safeTop));
   z-index: 999999;
 
-  padding: 10px 12px;
-  border-radius: 12px;
-  background: rgba(255,255,255,.94);
-  border: 1px solid rgba(16,24,40,.12);
-  box-shadow: 0 10px 22px rgba(16,24,40,.10);
-  font-weight: 900;
+  padding: 12px 14px;
+  border-radius: 14px;
+  background: rgba(255,255,255,.95);
+  border: 1px solid var(--line);
+  box-shadow:
+    0 12px 28px rgba(15,23,42,.12),
+    inset 0 1px 0 rgba(255,255,255,.72);
 
-  transform: translateY(-140%);
-  transition: transform 180ms cubic-bezier(.2,.9,.2,1);
+  color: var(--textStrong, var(--ink));
+  font-weight: 800;
+  line-height: 1.1;
+
+  transform: translateY(-160%);
+  transition: transform var(--dur2) var(--easeOut);
 }
-.skiplink:focus{
+
+.skiplink:focus-visible{
   transform: translateY(0);
 }
 
-/* Screen-reader only utility */
 .srOnly{
-  position:absolute !important;
-  width:1px !important;
-  height:1px !important;
-  padding:0 !important;
-  margin:-1px !important;
-  overflow:hidden !important;
-  clip:rect(0,0,0,0) !important;
-  white-space:nowrap !important;
-  border:0 !important;
+  position: absolute !important;
+  width: 1px !important;
+  height: 1px !important;
+  padding: 0 !important;
+  margin: -1px !important;
+  overflow: hidden !important;
+  clip: rect(0, 0, 0, 0) !important;
+  clip-path: inset(50%) !important;
+  white-space: nowrap !important;
+  border: 0 !important;
 }
 
-/* =========================
-   Reduced motion (global safety net)
-========================= */
+/* =============================================================================
+  App root / layout foundations
+============================================================================= */
+
+/* Important: no max-width constraints here */
+.app{
+  position: relative;
+  width: 100%;
+  max-width: none;
+  min-height: 100vh;
+  min-height: 100dvh;
+}
+
+/* Common page shell utility */
+.pageShell{
+  width: 100%;
+  padding-left: calc(var(--pagePad) + var(--safeLeft));
+  padding-right: calc(var(--pagePad) + var(--safeRight));
+}
+
+.safeTop{
+  padding-top: var(--safeTop);
+}
+
+.safeBottom{
+  padding-bottom: var(--safeBottom);
+}
+
+.safeInset{
+  padding-top: var(--safeTop);
+  padding-right: var(--safeRight);
+  padding-bottom: var(--safeBottom);
+  padding-left: var(--safeLeft);
+}
+
+/* Prevent bottom-fixed bars from eating content when reused */
+.hasBottomInset{
+  padding-bottom: calc(var(--safeBottom) + 92px);
+}
+
+/* =============================================================================
+  Typography helpers
+============================================================================= */
+
+.textBalance{
+  text-wrap: balance;
+}
+
+.textPretty{
+  text-wrap: pretty;
+}
+
+.muted{
+  color: var(--muted);
+}
+
+.muted2{
+  color: var(--muted2);
+}
+
+.nowrap{
+  white-space: nowrap;
+}
+
+.truncate{
+  overflow: hidden;
+  text-overflow: ellipsis;
+  white-space: nowrap;
+}
+
+/* =============================================================================
+  Surface helpers
+============================================================================= */
+
+.surface{
+  background: var(--panel);
+  border: 1px solid var(--line);
+  box-shadow: var(--shadow);
+  border-radius: var(--radius);
+}
+
+.surfaceSoft{
+  background: var(--panel2);
+  border: 1px solid var(--line2);
+  box-shadow: var(--shadow2);
+  border-radius: var(--radius);
+}
+
+/* =============================================================================
+  Motion safety
+============================================================================= */
+
 @media (prefers-reduced-motion: reduce){
-  html{ scroll-behavior: auto; }
-  *{
-    animation-duration: .001ms !important;
+  html{
+    scroll-behavior: auto;
+  }
+
+  *,
+  *::before,
+  *::after{
+    animation-duration: 0.001ms !important;
     animation-iteration-count: 1 !important;
-    transition-duration: .001ms !important;
+    transition-duration: 0.001ms !important;
     scroll-behavior: auto !important;
   }
 }
 
-/* =========================
-   App root (base behavior)
-========================= */
-/* IMPORTANT: base.css should NOT enforce max-width. */
-.app{
-  width: 100%;
-  max-width: none;
-  min-height: 100vh;
-}
+/* =============================================================================
+  Desktop blocker
+  Base only. Logic decides when to show it.
+============================================================================= */
 
-/* Safe-area utilities */
-.safeTop{ padding-top: var(--safeTop); }
-.safeBottom{ padding-bottom: var(--safeBottom); }
-
-/* =========================
-   Desktop blocker (base only)
-   (styles exist, logic decides when to show)
-========================= */
 .desktopBlock{
   position: fixed;
   inset: 0;
-  background: rgba(16,24,40,.55);
-  backdrop-filter: blur(10px);
-  -webkit-backdrop-filter: blur(10px);
+  z-index: 9999;
 
-  display:none;
-  align-items:center;
-  justify-content:center;
+  display: none;
+  align-items: center;
+  justify-content: center;
 
-  z-index:9999;
-  padding: 20px;
+  padding:
+    calc(20px + var(--safeTop))
+    calc(20px + var(--safeRight))
+    calc(20px + var(--safeBottom))
+    calc(20px + var(--safeLeft));
+
+  background: rgba(18,22,36,.52);
+  backdrop-filter: blur(12px);
+  -webkit-backdrop-filter: blur(12px);
 }
 
 .desktopCard{
-  width:min(420px, 92vw);
-  background: rgba(255,255,255,.92);
-  border:1px solid rgba(231,233,243,.85);
-  border-radius: 22px;
-  padding: 18px 18px 16px;
-  box-shadow: var(--shadow);
-  text-align:center;
   position: relative;
   overflow: hidden;
+
+  width: min(420px, 100%);
+  padding: 20px 18px 18px;
+
+  border-radius: 24px;
+  background: rgba(255,255,255,.94);
+  border: 1px solid rgba(255,255,255,.78);
+  box-shadow:
+    0 28px 64px rgba(15,23,42,.16),
+    0 10px 24px rgba(15,23,42,.08);
+
+  text-align: center;
 }
 
-/* Subtle specular sheen so it matches the HUD feel */
 .desktopCard::before{
-  content:"";
-  position:absolute;
-  inset:0;
-  background: linear-gradient(180deg, rgba(255,255,255,.55), rgba(255,255,255,0) 55%);
-  opacity: .55;
-  pointer-events:none;
+  content: "";
+  position: absolute;
+  inset: 0;
+  border-radius: inherit;
+  background:
+    linear-gradient(180deg, rgba(255,255,255,.72), rgba(255,255,255,0) 58%);
+  opacity: .8;
+  pointer-events: none;
 }
 
-.desktopEmoji{ font-size: 44px; margin: 6px 0 10px; }
-.desktopCard h2{ margin:0 0 8px; font-size: 20px; }
-.desktopCard p{ margin:0; color: var(--muted); line-height: 1.35; }
+.desktopEmoji{
+  font-size: 44px;
+  line-height: 1;
+  margin: 4px 0 12px;
+}
 
-/* =========================
-   Tiny utilities
-========================= */
-.muted{ color: var(--muted); }
+.desktopCard h2{
+  margin: 0 0 8px;
+  font-size: 20px;
+  line-height: 1.15;
+  letter-spacing: -.02em;
+  color: var(--textStrong, var(--ink));
+}
+
+.desktopCard p{
+  margin: 0;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+/* =============================================================================
+  Scrollbars
+  Subtle, not circus.
+============================================================================= */
+
+*{
+  scrollbar-width: thin;
+  scrollbar-color: rgba(22,26,45,.16) transparent;
+}
+
+*::-webkit-scrollbar{
+  width: 10px;
+  height: 10px;
+}
+
+*::-webkit-scrollbar-track{
+  background: transparent;
+}
+
+*::-webkit-scrollbar-thumb{
+  background: rgba(22,26,45,.14);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+  border-radius: 999px;
+}
+
+*::-webkit-scrollbar-thumb:hover{
+  background: rgba(22,26,45,.22);
+  border: 2px solid transparent;
+  background-clip: padding-box;
+}
+
+/* =============================================================================
+  Tiny layout utilities
+============================================================================= */
+
+.stack-xs > * + *{ margin-top: 6px; }
+.stack-sm > * + *{ margin-top: 10px; }
+.stack-md > * + *{ margin-top: 14px; }
+.stack-lg > * + *{ margin-top: 18px; }
+.stack-xl > * + *{ margin-top: 24px; }
+
+.row{
+  display: flex;
+  align-items: center;
+}
+
+.row-between{
+  display: flex;
+  align-items: center;
+  justify-content: space-between;
+}
+
+.row-center{
+  display: flex;
+  align-items: center;
+  justify-content: center;
+}
+
+.w-full{
+  width: 100%;
+}
+
+.min-w-0{
+  min-width: 0;
+}
+
+/* =============================================================================
+  Touch affordance helpers
+============================================================================= */
+
+.tapTarget{
+  min-width: var(--tap);
+  min-height: var(--tap);
+}
+
+.tapTargetSm{
+  min-width: var(--tapSm);
+  min-height: var(--tapSm);
+}
+
+.tapTargetLg{
+  min-width: var(--tapLg);
+  min-height: var(--tapLg);
+}

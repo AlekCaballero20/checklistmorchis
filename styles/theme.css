@@ -1,377 +1,518 @@
 /* =============================================================================
-  /styles/theme.css — Design tokens + per-mode accents (LIGHT ONLY) — PRO v3.0
-  - Compatible with your existing variable names (bg/surface/text/line/shadow/focus)
-  - Better contrast + calmer “premium glass” (no neon circo)
-  - Adds safe-area + tap targets + subtle semantic tokens
-  - Keeps your per-mode themes intact, just tuned and consistent
+  /styles/theme.css
+  Design tokens + visual system base for Checklist Morchis
+  - Light only
+  - Mobile-first
+  - Compatible with current JS/CSS usage
+  - Keeps legacy aliases alive so nothing explodes for no reason
 ============================================================================= */
 
 :root{
-  /* =========================================================
-     CORE BACKGROUND (Light)
-  ========================================================= */
-  --bg: #f6f8ff;
-
-  /* Safe areas (iOS notch etc.) */
+  /* ==========================================================================
+     SAFE AREA
+  ========================================================================== */
   --safeTop: env(safe-area-inset-top);
   --safeRight: env(safe-area-inset-right);
   --safeBottom: env(safe-area-inset-bottom);
   --safeLeft: env(safe-area-inset-left);
 
-  /* Soft background blobs (computed) */
+  /* ==========================================================================
+     BRAND / APP IDENTITY
+  ========================================================================== */
+  --brand: #7c5cff;
+  --brand2: #5b47ea;
+  --accent: #ff6fa9;
+
+  --gradBrand: linear-gradient(
+    135deg,
+    color-mix(in srgb, var(--brand) 92%, white 8%),
+    color-mix(in srgb, var(--accent) 86%, white 14%)
+  );
+
   --gradSoft:
-    radial-gradient(1200px 700px at 18% -12%, rgba(12,65,196,.16), transparent 56%),
-    radial-gradient(900px 650px at 86% -8%, rgba(206,0,113,.14), transparent 54%),
-    radial-gradient(900px 600px at 50% 102%, rgba(34,10,99,.10), transparent 58%),
-    linear-gradient(180deg, rgba(255,255,255,.55), rgba(255,255,255,0) 40%);
+    radial-gradient(1200px 760px at -8% -12%, rgba(124,92,255,.18), transparent 58%),
+    radial-gradient(860px 620px at 104% -8%, rgba(255,111,169,.14), transparent 52%),
+    radial-gradient(980px 700px at 50% 112%, rgba(91,71,234,.08), transparent 58%),
+    linear-gradient(180deg, rgba(255,255,255,.70), rgba(255,255,255,0) 42%);
 
-  /* =========================================================
-     SURFACES (Glass-ish)
-  ========================================================= */
-  --surface:  rgba(255,255,255,.90);
-  --surface2: rgba(255,255,255,.74);
-  --surface3: rgba(255,255,255,.60);
+  /* ==========================================================================
+     CORE NEUTRALS
+  ========================================================================== */
+  --bg: #f6f7fb;
+  --bg2: #f1f3f9;
+  --bg3: #ebeff8;
 
-  /* “HUD” panels */
-  --hud:   rgba(255,255,255,.84);
-  --hud2:  rgba(255,255,255,.70);
-  --hud3:  rgba(255,255,255,.56);
+  --surface: rgba(255,255,255,.92);
+  --surface2: rgba(255,255,255,.82);
+  --surface3: rgba(255,255,255,.70);
+  --surface4: rgba(248,250,255,.92);
 
-  /* Glass blur */
-  --glassBlur: 14px;
-  --glassBlur2: 20px;
+  --panel: var(--surface);
+  --panel2: var(--surface2);
+  --panel3: var(--surface3);
 
-  /* Specular highlights */
-  --shine: rgba(255,255,255,.78);
-  --shine2: rgba(255,255,255,.42);
+  --hud: rgba(255,255,255,.86);
+  --hud2: rgba(255,255,255,.74);
+  --hud3: rgba(255,255,255,.62);
+
+  --modalBg: rgba(255,255,255,.96);
+  --modalBorder: rgba(255,255,255,.84);
+  --modalShadow:
+    0 28px 64px rgba(15,23,42,.16),
+    0 10px 24px rgba(15,23,42,.08);
+
+  /* ==========================================================================
+     TEXT
+  ========================================================================== */
+  --text: #161a2d;
+  --textStrong: #0d1020;
+  --textSubtle: #3f475f;
+  --muted: rgba(22,26,45,.68);
+  --muted2: rgba(22,26,45,.52);
+  --muted3: rgba(22,26,45,.38);
+
+  /* Legacy aliases */
+  --ink: var(--textStrong);
+
+  /* ==========================================================================
+     BORDERS / STROKES
+  ========================================================================== */
+  --line: rgba(22,26,45,.10);
+  --line2: rgba(22,26,45,.07);
+  --line3: rgba(22,26,45,.05);
+
+  --stroke: rgba(255,255,255,.82);
+  --stroke2: rgba(255,255,255,.56);
+  --strokeDark: rgba(22,26,45,.08);
+
+  --panelBorder: color-mix(in srgb, var(--line) 54%, white 46%);
+  --btnBorder: rgba(22,26,45,.10);
+  --btnBorderHover: rgba(22,26,45,.15);
+  --fieldBorder: rgba(22,26,45,.12);
+  --fieldBorderFocus: rgba(124,92,255,.32);
+
+  /* ==========================================================================
+     STATUS COLORS
+  ========================================================================== */
+  --good: #18b56a;
+  --bad: #ef4f5f;
+  --warn: #f3a11a;
+  --info: #31a7e8;
+
+  --goodSoft: rgba(24,181,106,.12);
+  --badSoft: rgba(239,79,95,.12);
+  --warnSoft: rgba(243,161,26,.14);
+  --infoSoft: rgba(49,167,232,.12);
+
+  /* ==========================================================================
+     OVERLAYS
+  ========================================================================== */
+  --overlay: rgba(18,22,36,.48);
+  --overlay2: rgba(18,22,36,.26);
+  --scrim: linear-gradient(180deg, rgba(18,22,36,.08), rgba(18,22,36,.28));
+
+  /* ==========================================================================
+     GLASS / FX
+  ========================================================================== */
+  --glassBlur: 16px;
+  --glassBlur2: 22px;
+
+  --shine: rgba(255,255,255,.82);
+  --shine2: rgba(255,255,255,.46);
 
   --specular:
-    linear-gradient(180deg, rgba(255,255,255,.72), rgba(255,255,255,0) 44%);
+    linear-gradient(
+      180deg,
+      rgba(255,255,255,.76),
+      rgba(255,255,255,.28) 22%,
+      rgba(255,255,255,0) 48%
+    );
 
   --specularSide:
-    radial-gradient(900px 240px at 12% 0%, rgba(255,255,255,.55), transparent 55%);
+    radial-gradient(
+      860px 220px at 12% 0%,
+      rgba(255,255,255,.54),
+      transparent 58%
+    );
 
-  /* =========================================================
-     TEXT
-  ========================================================= */
-  --text: #0b1020;
-  --muted: rgba(11,16,32,.62);
-  --muted2: rgba(11,16,32,.48);
-  --textSubtle: rgba(11,16,32,.76);
+  --shimmer:
+    linear-gradient(
+      110deg,
+      rgba(255,255,255,0) 0%,
+      rgba(255,255,255,.44) 20%,
+      rgba(255,255,255,0) 42%
+    );
 
-  /* =========================================================
-     LINES / STROKES
-  ========================================================= */
-  --line:  rgba(11,16,32,.10);
-  --line2: rgba(11,16,32,.08);
+  --particleSoft: rgba(124,92,255,.16);
+  --sparkle: rgba(255,255,255,.84);
 
-  /* Premium strokes for glass edges */
-  --stroke: rgba(255,255,255,.74);
-  --stroke2: rgba(255,255,255,.48);
-  --strokeDark: rgba(11,16,32,.08);
+  /* ==========================================================================
+     SHADOWS / ELEVATION
+  ========================================================================== */
+  --shadow: 0 12px 30px rgba(28,34,66,.10);
+  --shadow2: 0 18px 40px rgba(28,34,66,.12);
 
-  /* =========================================================
-     OVERLAYS
-  ========================================================= */
-  --overlay: rgba(0,0,0,.44);
-  --overlay2: rgba(0,0,0,.22);
+  --elev0: 0 0 0 rgba(0,0,0,0);
+  --elev1:
+    0 8px 18px rgba(23,31,60,.06),
+    0 2px 8px rgba(23,31,60,.04);
+  --elev2:
+    0 16px 32px rgba(23,31,60,.08),
+    0 6px 14px rgba(23,31,60,.05);
+  --elev3:
+    0 24px 52px rgba(23,31,60,.12),
+    0 10px 20px rgba(23,31,60,.06);
 
-  /* =========================================================
-     BRAND (Default = "salida")
-  ========================================================= */
-  --brand:  #0C41C4;
-  --brand2: #220A63;
-  --accent: #CE0071;
+  --glowBrand: 0 16px 34px rgba(124,92,255,.22);
+  --glowAccent: 0 16px 34px rgba(255,111,169,.18);
 
-  --gradBrand: linear-gradient(135deg, rgba(12,65,196,.98), rgba(206,0,113,.92));
+  --inner1: inset 0 1px 0 rgba(255,255,255,.80);
+  --inner2: inset 0 -1px 0 rgba(17,24,39,.04);
 
-  /* Brand glows */
-  --glowBrand:  0 10px 28px rgba(12,65,196,.18);
-  --glowAccent: 0 10px 28px rgba(206,0,113,.14);
-
-  /* =========================================================
-     STATUS
-  ========================================================= */
-  --good: #22c55e;
-  --bad:  #ef4444;
-  --warn: #f59e0b;
-  --info: #06b6d4;
-
-  --goodSoft: rgba(34,197,94,.12);
-  --badSoft:  rgba(239,68,68,.12);
-  --warnSoft: rgba(245,158,11,.14);
-  --infoSoft: rgba(6,182,212,.12);
-
-  /* =========================================================
-     RADII + SIZES
-  ========================================================= */
+  /* ==========================================================================
+     RADII
+  ========================================================================== */
+  --r8: 8px;
+  --r10: 10px;
   --r12: 12px;
+  --r14: 14px;
   --r16: 16px;
+  --r18: 18px;
   --r20: 20px;
   --r24: 24px;
+  --r28: 28px;
   --r999: 999px;
 
-  /* Tap target: 44px min, pero en Android a veces se siente mejor 46 */
-  --tap: 46px;
+  /* Legacy aliases */
+  --radius: var(--r18);
+  --radius2: var(--r24);
 
-  /* Spacing scale */
-  --s2:  2px;
-  --s4:  4px;
-  --s6:  6px;
-  --s8:  8px;
+  /* ==========================================================================
+     SPACING SCALE
+  ========================================================================== */
+  --s2: 2px;
+  --s4: 4px;
+  --s6: 6px;
+  --s8: 8px;
   --s10: 10px;
   --s12: 12px;
   --s14: 14px;
   --s16: 16px;
+  --s18: 18px;
   --s20: 20px;
   --s24: 24px;
   --s28: 28px;
   --s32: 32px;
+  --s36: 36px;
+  --s40: 40px;
 
-  /* =========================================================
+  --pagePad: clamp(14px, 3.8vw, 18px);
+  --contentGap: var(--s16);
+  --sectionGap: var(--s20);
+
+  /* ==========================================================================
      TYPOGRAPHY
-  ========================================================= */
-  --font: ui-sans-serif, system-ui, -apple-system, "Segoe UI", Roboto, Arial, "Noto Sans",
-          "Apple Color Emoji", "Segoe UI Emoji";
+  ========================================================================== */
+  --font:
+    Inter,
+    ui-sans-serif,
+    system-ui,
+    -apple-system,
+    BlinkMacSystemFont,
+    "Segoe UI",
+    Roboto,
+    Arial,
+    "Noto Sans",
+    "Apple Color Emoji",
+    "Segoe UI Emoji";
 
+  --fs11: 11px;
   --fs12: 12px;
   --fs13: 13px;
   --fs14: 14px;
+  --fs15: 15px;
   --fs16: 16px;
   --fs18: 18px;
   --fs20: 20px;
+  --fs22: 22px;
+  --fs24: 24px;
+  --fs28: 28px;
 
-  --lhTight: 1.15;
-  --lhBase:  1.35;
-  --lhLo:    1.55;
+  --lhTight: 1.12;
+  --lhBase: 1.35;
+  --lhLo: 1.55;
 
-  /* Mantengo tus pesos, pero los separo mejor */
   --wReg: 500;
-  --wMed: 650;
-  --wBold: 750;
-  --wBlack: 900;
+  --wMed: 600;
+  --wBold: 700;
+  --wBlack: 800;
 
-  /* =========================================================
-     SHADOWS / ELEVATION
-     Keep original shadow vars for compatibility.
-  ========================================================= */
-  --shadow:  0 10px 26px rgba(12,65,196,.10);
-  --shadow2: 0 14px 34px rgba(0,0,0,.12);
+  --letterDense: -.02em;
+  --letterTight: -.01em;
+  --letterNormal: 0;
+  --letterSoft: .01em;
 
-  --elev0: 0 0 0 rgba(0,0,0,0);
-  --elev1: 0 10px 26px rgba(0,0,0,.08);
-  --elev2: 0 14px 34px rgba(0,0,0,.10);
-  --elev3: 0 18px 46px rgba(0,0,0,.12);
+  /* ==========================================================================
+     CONTROL SIZES
+  ========================================================================== */
+  --tap: 46px;
+  --tapSm: 38px;
+  --tapLg: 52px;
 
-  --inner1: inset 0 1px 0 rgba(255,255,255,.72);
-  --inner2: inset 0 -1px 0 rgba(11,16,32,.06);
+  --btnH: 46px;
+  --btnHSm: 36px;
+  --btnHLg: 52px;
 
-  /* =========================================================
-     FOCUS / INTERACTION
-  ========================================================= */
-  --focusRing:  0 0 0 4px rgba(12,65,196,.14);
-  --focusRing2: 0 0 0 6px rgba(206,0,113,.10);
+  --icon12: 12px;
+  --icon14: 14px;
+  --icon16: 16px;
+  --icon18: 18px;
+  --icon20: 20px;
+  --icon24: 24px;
 
-  --hoverLift: translateY(-1px);
-  --pressLift: translateY(0px);
-  --pressScale: .985;
-
-  /* =========================================================
+  /* ==========================================================================
      MOTION
-  ========================================================= */
+  ========================================================================== */
   --dur1: 120ms;
   --dur2: 180ms;
   --dur3: 260ms;
   --dur4: 420ms;
 
   --easeOut: cubic-bezier(.16, 1, .3, 1);
-  --easeIn:  cubic-bezier(.7, 0, .84, 0);
+  --easeIn: cubic-bezier(.7, 0, .84, 0);
   --easeInOut: cubic-bezier(.65, 0, .35, 1);
   --easeSnap: cubic-bezier(.2, .9, .2, 1);
 
-  /* =========================================================
-     EFFECTS
-  ========================================================= */
-  --shimmer:
-    linear-gradient(110deg,
-      rgba(255,255,255,0) 0%,
-      rgba(255,255,255,.42) 22%,
-      rgba(255,255,255,0) 44%);
+  --hoverLift: translateY(-1px);
+  --pressLift: translateY(0);
+  --pressScale: .985;
 
-  --sparkle: rgba(255,255,255,.82);
-  --particleSoft: rgba(12,65,196,.16);
+  /* ==========================================================================
+     FOCUS / ACCESSIBILITY
+  ========================================================================== */
+  --focusColor: rgba(124,92,255,.34);
+  --focusColorStrong: rgba(124,92,255,.18);
+  --focusRing: 0 0 0 4px var(--focusColor);
+  --focusRing2: 0 0 0 6px rgba(255,111,169,.12);
 
-  /* =========================================================
-     SEMANTIC UI TOKENS (optional helpers)
-  ========================================================= */
-  --btnBg: rgba(255,255,255,.84);
-  --btnBgHover: rgba(255,255,255,.92);
-  --btnBgPressed: rgba(255,255,255,.78);
-  --btnBorder: rgba(11,16,32,.10);
-  --btnBorderHover: rgba(11,16,32,.14);
+  /* ==========================================================================
+     BUTTON TOKENS
+  ========================================================================== */
+  --btnBg: rgba(255,255,255,.90);
+  --btnBgHover: rgba(255,255,255,.98);
+  --btnBgPressed: rgba(247,249,255,.92);
 
-  --btnPrimaryText: #fff;
+  --btnText: var(--textStrong);
+  --btnTextMuted: var(--textSubtle);
+
+  --btnPrimaryText: #ffffff;
   --btnPrimaryBorder: rgba(255,255,255,.18);
   --btnPrimaryShadow: var(--glowBrand);
 
-  --btnDangerBg: rgba(239,68,68,.12);
-  --btnDangerBorder: rgba(239,68,68,.22);
+  --btnGhostBg: rgba(255,255,255,.62);
+  --btnGhostHover: rgba(255,255,255,.78);
 
-  --fieldBg: rgba(255,255,255,.78);
-  --fieldBorder: rgba(11,16,32,.10);
-  --fieldBorderFocus: rgba(12,65,196,.28);
+  --btnDangerBg: rgba(239,79,95,.10);
+  --btnDangerBorder: rgba(239,79,95,.18);
+  --btnDangerText: #cf3f4e;
 
+  /* ==========================================================================
+     FORM TOKENS
+  ========================================================================== */
+  --fieldBg: rgba(255,255,255,.84);
+  --fieldBgStrong: rgba(255,255,255,.94);
+  --fieldPlaceholder: rgba(22,26,45,.42);
+  --fieldText: var(--text);
+  --fieldShadow:
+    inset 0 1px 0 rgba(255,255,255,.78),
+    0 1px 2px rgba(15,23,42,.03);
+
+  /* ==========================================================================
+     CHIP / TAG / SMALL UI
+  ========================================================================== */
+  --chipBg: rgba(255,255,255,.76);
+  --chipBgStrong: rgba(255,255,255,.92);
+  --chipBorder: rgba(22,26,45,.08);
+  --chipText: var(--textSubtle);
+  --chipActiveText: #ffffff;
+  --chipShadow:
+    0 6px 16px rgba(18,22,36,.06),
+    inset 0 1px 0 rgba(255,255,255,.62);
+
+  /* ==========================================================================
+     CARD / PANEL
+  ========================================================================== */
   --panelBg: var(--surface);
-  --panelBorder: var(--stroke);
-  --panelShadow: var(--elev1);
+  --panelBgSoft: var(--surface2);
+  --panelShadow: var(--elev2);
+  --panelShadowSoft: var(--elev1);
 
-  --chipBg: rgba(255,255,255,.72);
-  --chipBorder: rgba(11,16,32,.08);
+  /* ==========================================================================
+     TOAST / BADGE / PROGRESS
+  ========================================================================== */
+  --toastBg: rgba(20,24,37,.88);
+  --toastText: rgba(255,255,255,.96);
+  --toastBorder: rgba(255,255,255,.10);
+  --toastShadow: 0 18px 44px rgba(12,15,24,.28);
 
-  --modalBg: rgba(255,255,255,.92);
-  --modalBorder: rgba(255,255,255,.70);
-  --modalShadow: var(--elev3);
+  --progressTrack:
+    linear-gradient(180deg, rgba(22,26,45,.08), rgba(22,26,45,.05));
+  --progressFill: var(--gradBrand);
+
+  /* ==========================================================================
+     LEGACY / COMPAT ALIASES
+     Por si en otros CSS quedaron tokens antiguos viviendo sabroso.
+  ========================================================================== */
+  --mozart: var(--brand);
+  --bach: var(--brand2);
+  --brahms: var(--accent);
+
+  --panelBgLegacy: var(--panelBg);
 }
 
 /* =============================================================================
-  MODE THEMES
+  LIST / MODE THEMES
+  Se mantienen por compatibilidad con data-mode existente.
+  No quedan chillones. Somos adultos funcionales.
 ============================================================================= */
 
-/* salida */
+/* Default / salida */
 :root[data-mode="salida"]{
-  --brand:  #0C41C4;
-  --brand2: #220A63;
-  --accent: #CE0071;
+  --brand: #7c5cff;
+  --brand2: #5b47ea;
+  --accent: #ff6fa9;
 
-  --gradBrand: linear-gradient(135deg, rgba(12,65,196,.98), rgba(206,0,113,.92));
+  --gradBrand: linear-gradient(135deg, #7c5cff, #ff6fa9);
   --gradSoft:
-    radial-gradient(1200px 700px at 18% -12%, rgba(12,65,196,.16), transparent 56%),
-    radial-gradient(900px 650px at 86% -8%, rgba(206,0,113,.14), transparent 54%),
-    radial-gradient(900px 600px at 50% 102%, rgba(34,10,99,.10), transparent 58%),
-    linear-gradient(180deg, rgba(255,255,255,.55), rgba(255,255,255,0) 40%);
+    radial-gradient(1200px 760px at -8% -12%, rgba(124,92,255,.18), transparent 58%),
+    radial-gradient(860px 620px at 104% -8%, rgba(255,111,169,.14), transparent 52%),
+    radial-gradient(980px 700px at 50% 112%, rgba(91,71,234,.08), transparent 58%),
+    linear-gradient(180deg, rgba(255,255,255,.70), rgba(255,255,255,0) 42%);
 
-  --glowBrand:  0 10px 28px rgba(12,65,196,.18);
-  --glowAccent: 0 10px 28px rgba(206,0,113,.14);
-
-  --particleSoft: rgba(12,65,196,.16);
+  --glowBrand: 0 16px 34px rgba(124,92,255,.22);
+  --glowAccent: 0 16px 34px rgba(255,111,169,.18);
+  --focusColor: rgba(124,92,255,.34);
+  --particleSoft: rgba(124,92,255,.16);
 }
 
 /* viaje */
 :root[data-mode="viaje"]{
-  --brand:  #2563eb;
-  --brand2: #1d4ed8;
-  --accent: #06b6d4;
+  --brand: #3f8cff;
+  --brand2: #2563eb;
+  --accent: #49d7c8;
 
-  --gradBrand: linear-gradient(135deg, rgba(37,99,235,.98), rgba(6,182,212,.92));
+  --gradBrand: linear-gradient(135deg, #3f8cff, #49d7c8);
   --gradSoft:
-    radial-gradient(1200px 700px at 18% -12%, rgba(37,99,235,.16), transparent 56%),
-    radial-gradient(900px 650px at 86% -8%, rgba(6,182,212,.14), transparent 54%),
-    radial-gradient(900px 600px at 50% 102%, rgba(29,78,216,.10), transparent 58%),
-    linear-gradient(180deg, rgba(255,255,255,.55), rgba(255,255,255,0) 40%);
+    radial-gradient(1200px 760px at -8% -12%, rgba(63,140,255,.16), transparent 58%),
+    radial-gradient(860px 620px at 104% -8%, rgba(73,215,200,.14), transparent 52%),
+    radial-gradient(980px 700px at 50% 112%, rgba(37,99,235,.08), transparent 58%),
+    linear-gradient(180deg, rgba(255,255,255,.70), rgba(255,255,255,0) 42%);
 
-  --glowBrand:  0 10px 28px rgba(37,99,235,.18);
-  --glowAccent: 0 10px 28px rgba(6,182,212,.14);
-
-  --particleSoft: rgba(6,182,212,.14);
+  --glowBrand: 0 16px 34px rgba(63,140,255,.20);
+  --glowAccent: 0 16px 34px rgba(73,215,200,.16);
+  --focusColor: rgba(63,140,255,.30);
+  --particleSoft: rgba(63,140,255,.14);
 }
 
 /* gira */
 :root[data-mode="gira"]{
-  --brand:  #6d28d9;
-  --brand2: #312e81;
-  --accent: #ec4899;
+  --brand: #8b5cf6;
+  --brand2: #6d28d9;
+  --accent: #f472b6;
 
-  --gradBrand: linear-gradient(135deg, rgba(109,40,217,.98), rgba(236,72,153,.92));
+  --gradBrand: linear-gradient(135deg, #8b5cf6, #f472b6);
   --gradSoft:
-    radial-gradient(1200px 700px at 18% -12%, rgba(109,40,217,.16), transparent 56%),
-    radial-gradient(900px 650px at 86% -8%, rgba(236,72,153,.14), transparent 54%),
-    radial-gradient(900px 600px at 50% 102%, rgba(49,46,129,.10), transparent 58%),
-    linear-gradient(180deg, rgba(255,255,255,.55), rgba(255,255,255,0) 40%);
+    radial-gradient(1200px 760px at -8% -12%, rgba(139,92,246,.18), transparent 58%),
+    radial-gradient(860px 620px at 104% -8%, rgba(244,114,182,.14), transparent 52%),
+    radial-gradient(980px 700px at 50% 112%, rgba(109,40,217,.08), transparent 58%),
+    linear-gradient(180deg, rgba(255,255,255,.70), rgba(255,255,255,0) 42%);
 
-  --glowBrand:  0 10px 28px rgba(109,40,217,.18);
-  --glowAccent: 0 10px 28px rgba(236,72,153,.14);
-
-  --particleSoft: rgba(109,40,217,.14);
+  --glowBrand: 0 16px 34px rgba(139,92,246,.20);
+  --glowAccent: 0 16px 34px rgba(244,114,182,.16);
+  --focusColor: rgba(139,92,246,.30);
+  --particleSoft: rgba(139,92,246,.14);
 }
 
 /* playa */
 :root[data-mode="playa"]{
-  --brand:  #f59e0b;
-  --brand2: #fb7185; /* coral-ish */
-  --accent: #06b6d4;
+  --brand: #f5a524;
+  --brand2: #ff8a65;
+  --accent: #38c7d8;
 
-  --gradBrand: linear-gradient(135deg, rgba(245,158,11,.98), rgba(6,182,212,.92));
+  --gradBrand: linear-gradient(135deg, #f5a524, #38c7d8);
   --gradSoft:
-    radial-gradient(1200px 700px at 18% -12%, rgba(245,158,11,.18), transparent 56%),
-    radial-gradient(900px 650px at 86% -8%, rgba(6,182,212,.14), transparent 54%),
-    radial-gradient(900px 600px at 50% 102%, rgba(251,113,133,.10), transparent 58%),
-    linear-gradient(180deg, rgba(255,255,255,.55), rgba(255,255,255,0) 40%);
+    radial-gradient(1200px 760px at -8% -12%, rgba(245,165,36,.18), transparent 58%),
+    radial-gradient(860px 620px at 104% -8%, rgba(56,199,216,.14), transparent 52%),
+    radial-gradient(980px 700px at 50% 112%, rgba(255,138,101,.08), transparent 58%),
+    linear-gradient(180deg, rgba(255,255,255,.70), rgba(255,255,255,0) 42%);
 
-  --glowBrand:  0 10px 28px rgba(245,158,11,.18);
-  --glowAccent: 0 10px 28px rgba(6,182,212,.14);
-
-  --particleSoft: rgba(245,158,11,.14);
+  --glowBrand: 0 16px 34px rgba(245,165,36,.18);
+  --glowAccent: 0 16px 34px rgba(56,199,216,.15);
+  --focusColor: rgba(245,165,36,.28);
+  --particleSoft: rgba(245,165,36,.14);
 }
 
 /* frio */
 :root[data-mode="frio"]{
-  --brand:  #38bdf8;
-  --brand2: #2563eb;
-  --accent: #a78bfa;
+  --brand: #4db8ff;
+  --brand2: #4f7cff;
+  --accent: #9d8cff;
 
-  --gradBrand: linear-gradient(135deg, rgba(56,189,248,.98), rgba(167,139,250,.92));
+  --gradBrand: linear-gradient(135deg, #4db8ff, #9d8cff);
   --gradSoft:
-    radial-gradient(1200px 700px at 18% -12%, rgba(56,189,248,.18), transparent 56%),
-    radial-gradient(900px 650px at 86% -8%, rgba(167,139,250,.14), transparent 54%),
-    radial-gradient(900px 600px at 50% 102%, rgba(37,99,235,.10), transparent 58%),
-    linear-gradient(180deg, rgba(255,255,255,.55), rgba(255,255,255,0) 40%);
+    radial-gradient(1200px 760px at -8% -12%, rgba(77,184,255,.18), transparent 58%),
+    radial-gradient(860px 620px at 104% -8%, rgba(157,140,255,.14), transparent 52%),
+    radial-gradient(980px 700px at 50% 112%, rgba(79,124,255,.08), transparent 58%),
+    linear-gradient(180deg, rgba(255,255,255,.70), rgba(255,255,255,0) 42%);
 
-  --glowBrand:  0 10px 28px rgba(56,189,248,.18);
-  --glowAccent: 0 10px 28px rgba(167,139,250,.14);
-
-  --particleSoft: rgba(167,139,250,.14);
+  --glowBrand: 0 16px 34px rgba(77,184,255,.18);
+  --glowAccent: 0 16px 34px rgba(157,140,255,.15);
+  --focusColor: rgba(77,184,255,.28);
+  --particleSoft: rgba(157,140,255,.14);
 }
 
 /* =============================================================================
-  Helper classes (optional)
+  OPTIONAL HELPER UTILITIES
+  No rompen nada y sirven para mantener consistencia visual.
 ============================================================================= */
 
 .bg-app{
   background: var(--gradSoft), var(--bg);
 }
 
-/* Premium glass card */
 .card{
+  position: relative;
   background: var(--panelBg);
   border: 1px solid var(--panelBorder);
-  box-shadow: var(--panelShadow);
   border-radius: var(--r20);
+  box-shadow: var(--panelShadow);
   backdrop-filter: blur(var(--glassBlur));
   -webkit-backdrop-filter: blur(var(--glassBlur));
-  position: relative;
 }
 
-/* Optional sheen overlay */
+.card.is-soft{
+  background: var(--panelBgSoft);
+  box-shadow: var(--panelShadowSoft);
+}
+
 .card.is-sheen::before{
   content: "";
   position: absolute;
   inset: 0;
   border-radius: inherit;
   background: var(--specular);
-  opacity: .75;
+  opacity: .78;
   pointer-events: none;
   mix-blend-mode: screen;
 }
 
-/* Typography helpers */
 .text-muted{ color: var(--muted); }
 .text-muted2{ color: var(--muted2); }
+.text-subtle{ color: var(--textSubtle); }
 
-/* Border helpers */
 .border-soft{ border: 1px solid var(--line); }
 .border-softer{ border: 1px solid var(--line2); }
 
-/* Brand button baseline */
 .btn-brand{
   background: var(--gradBrand);
   color: var(--btnPrimaryText);
@@ -379,7 +520,18 @@
   box-shadow: var(--btnPrimaryShadow);
 }
 
-/* Focus ring helper */
 .ring-focus{
   box-shadow: var(--focusRing);
+}
+
+/* ==========================================================================
+   Reduced motion fallback tokens
+========================================================================== */
+@media (prefers-reduced-motion: reduce){
+  :root{
+    --dur1: 1ms;
+    --dur2: 1ms;
+    --dur3: 1ms;
+    --dur4: 1ms;
+  }
 }
