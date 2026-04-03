@@ -60,10 +60,10 @@
   --focusColor: rgba(124,92,255,.34);
   --focusRing: 0 0 0 4px var(--focusColor);
 
-  --safeTop: env(safe-area-inset-top);
-  --safeRight: env(safe-area-inset-right);
-  --safeBottom: env(safe-area-inset-bottom);
-  --safeLeft: env(safe-area-inset-left);
+  --safeTop: env(safe-area-inset-top, 0px);
+  --safeRight: env(safe-area-inset-right, 0px);
+  --safeBottom: env(safe-area-inset-bottom, 0px);
+  --safeLeft: env(safe-area-inset-left, 0px);
 
   --dur1: 120ms;
   --dur2: 180ms;
@@ -73,6 +73,9 @@
 
   --selection: rgba(124,92,255,.18);
   --selectionText: var(--textStrong);
+
+  --viewportPadX: calc(var(--pagePad) + var(--safeLeft));
+  --viewportPadXRight: calc(var(--pagePad) + var(--safeRight));
 }
 
 /* =============================================================================
@@ -83,6 +86,7 @@
 *::before,
 *::after{
   box-sizing: border-box;
+  min-width: 0;
 }
 
 html{
@@ -95,6 +99,8 @@ html{
   text-size-adjust: 100%;
   scroll-behavior: smooth;
   color-scheme: light;
+
+  overflow-x: clip;
 }
 
 body{
@@ -110,14 +116,19 @@ body{
   color: var(--text, var(--ink));
 
   background:
-    var(--gradSoft, radial-gradient(1200px 760px at -8% -12%, rgba(124,92,255,.16), transparent 58%), radial-gradient(860px 620px at 104% -8%, rgba(255,111,169,.12), transparent 52%), linear-gradient(180deg, rgba(255,255,255,.72), rgba(255,255,255,0) 42%)),
+    var(
+      --gradSoft,
+      radial-gradient(1200px 760px at -8% -12%, rgba(124,92,255,.16), transparent 58%),
+      radial-gradient(860px 620px at 104% -8%, rgba(255,111,169,.12), transparent 52%),
+      linear-gradient(180deg, rgba(255,255,255,.72), rgba(255,255,255,0) 42%)
+    ),
     var(--bg);
 
   -webkit-font-smoothing: antialiased;
   -moz-osx-font-smoothing: grayscale;
   text-rendering: optimizeLegibility;
 
-  overflow-x: hidden;
+  overflow-x: clip;
   overscroll-behavior-y: contain;
   -webkit-tap-highlight-color: transparent;
   touch-action: manipulation;
@@ -131,6 +142,20 @@ body,
   min-height: 100dvh;
 }
 
+/* Prevent random horizontal growth from flex/grid descendants */
+body > *,
+.app > *,
+main > *,
+section > *,
+header > *,
+footer > *,
+div,
+article,
+aside,
+nav{
+  min-width: 0;
+}
+
 /* =============================================================================
   Document defaults
 ============================================================================= */
@@ -138,6 +163,17 @@ body,
 h1, h2, h3, h4, h5, h6,
 p, figure, blockquote, dl, dd{
   margin: 0;
+}
+
+h1, h2, h3, h4, h5, h6{
+  color: var(--textStrong, var(--ink));
+  line-height: 1.12;
+  letter-spacing: -.02em;
+  text-wrap: balance;
+}
+
+p{
+  text-wrap: pretty;
 }
 
 ul, ol{
@@ -182,6 +218,7 @@ img{
 table{
   border-collapse: collapse;
   border-spacing: 0;
+  width: 100%;
 }
 
 template{
@@ -221,6 +258,7 @@ select,
 textarea{
   font: inherit;
   color: inherit;
+  max-width: 100%;
 }
 
 button,
@@ -238,6 +276,10 @@ button,
   touch-action: manipulation;
 }
 
+button{
+  flex-shrink: 0;
+}
+
 button:disabled,
 [role="button"][aria-disabled="true"]{
   cursor: not-allowed;
@@ -252,6 +294,7 @@ textarea{
   border: 0;
   outline: 0;
   min-width: 0;
+  width: 100%;
 }
 
 textarea{
@@ -273,6 +316,10 @@ input::-webkit-credentials-auto-fill-button{
   visibility: hidden;
   position: absolute;
   right: 0;
+}
+
+input::-webkit-date-and-time-value{
+  text-align: inherit;
 }
 
 /* Remove inner spin buttons where not wanted */
@@ -297,6 +344,17 @@ input[type="search"]::-webkit-search-cancel-button,
 input[type="search"]::-webkit-search-results-button,
 input[type="search"]::-webkit-search-results-decoration{
   -webkit-appearance: none;
+}
+
+/* Autofill cleanup */
+input:-webkit-autofill,
+input:-webkit-autofill:hover,
+input:-webkit-autofill:focus,
+textarea:-webkit-autofill,
+select:-webkit-autofill{
+  -webkit-text-fill-color: var(--textStrong, var(--ink));
+  transition: background-color 9999s ease-out 0s;
+  box-shadow: 0 0 0 1000px transparent inset;
 }
 
 /* =============================================================================
@@ -339,15 +397,21 @@ textarea:focus-visible,
   Accessibility helpers
 ============================================================================= */
 
-.skiplink{
+.skiplink,
+.skipLink{
   position: fixed;
-  left: 14px;
+  left: calc(14px + var(--safeLeft));
   top: calc(10px + var(--safeTop));
   z-index: 999999;
 
+  display: inline-flex;
+  align-items: center;
+  justify-content: center;
+
+  max-width: calc(100vw - 28px - var(--safeLeft) - var(--safeRight));
   padding: 12px 14px;
   border-radius: 14px;
-  background: rgba(255,255,255,.95);
+  background: rgba(255,255,255,.96);
   border: 1px solid var(--line);
   box-shadow:
     0 12px 28px rgba(15,23,42,.12),
@@ -357,14 +421,23 @@ textarea:focus-visible,
   font-weight: 800;
   line-height: 1.1;
 
-  transform: translateY(-160%);
-  transition: transform var(--dur2) var(--easeOut);
+  transform: translateY(calc(-100% - 18px - var(--safeTop)));
+  transition:
+    transform var(--dur2) var(--easeOut),
+    opacity var(--dur2) var(--easeOut);
+
+  opacity: 0;
+  pointer-events: none;
 }
 
-.skiplink:focus-visible{
+.skiplink:focus-visible,
+.skipLink:focus-visible{
   transform: translateY(0);
+  opacity: 1;
+  pointer-events: auto;
 }
 
+.sr-only,
 .srOnly{
   position: absolute !important;
   width: 1px !important;
@@ -382,13 +455,13 @@ textarea:focus-visible,
   App root / layout foundations
 ============================================================================= */
 
-/* Important: no max-width constraints here */
 .app{
   position: relative;
   width: 100%;
   max-width: none;
   min-height: 100vh;
   min-height: 100dvh;
+  isolation: isolate;
 }
 
 /* Common page shell utility */
@@ -416,6 +489,13 @@ textarea:focus-visible,
 /* Prevent bottom-fixed bars from eating content when reused */
 .hasBottomInset{
   padding-bottom: calc(var(--safeBottom) + 92px);
+}
+
+/* Content clamp helper for mobile apps */
+.contentClamp{
+  width: 100%;
+  max-width: 100%;
+  overflow-x: clip;
 }
 
 /* =============================================================================
@@ -515,6 +595,7 @@ textarea:focus-visible,
   overflow: hidden;
 
   width: min(420px, 100%);
+  max-width: 100%;
   padding: 20px 18px 18px;
 
   border-radius: 24px;
@@ -603,18 +684,21 @@ textarea:focus-visible,
 .row{
   display: flex;
   align-items: center;
+  min-width: 0;
 }
 
 .row-between{
   display: flex;
   align-items: center;
   justify-content: space-between;
+  min-width: 0;
 }
 
 .row-center{
   display: flex;
   align-items: center;
   justify-content: center;
+  min-width: 0;
 }
 
 .w-full{
@@ -622,6 +706,15 @@ textarea:focus-visible,
 }
 
 .min-w-0{
+  min-width: 0 !important;
+}
+
+.overflow-x-clip{
+  overflow-x: clip;
+}
+
+.flex-1{
+  flex: 1 1 auto;
   min-width: 0;
 }
 

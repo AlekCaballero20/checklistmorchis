@@ -4,6 +4,7 @@
   - Mobile-first
   - Se enfoca en estructura y composición
   - Los componentes visuales viven en components.css
+  - Más estable para PWA real y pantallas estrechas
 ============================================================================= */
 
 /* =============================================================================
@@ -28,6 +29,10 @@
 
   --tab-h: 42px;
   --tab-pad-x: 14px;
+
+  --shell-left: calc(var(--pad) + var(--safeLeft, 0px));
+  --shell-right: calc(var(--pad) + var(--safeRight, 0px));
+  --shell-x: var(--shell-left) var(--shell-right);
 }
 
 /* =============================================================================
@@ -40,6 +45,7 @@
   min-height: 100vh;
   min-height: 100dvh;
   padding-bottom: calc(var(--bottom-bar-h) + 18px + var(--safeBottom, 0px));
+  overflow-x: clip;
 }
 
 .app::before{
@@ -48,7 +54,9 @@
   inset: 0;
   z-index: -1;
   pointer-events: none;
-  background: var(--gradSoft, linear-gradient(180deg, #f8f9ff, #eef2ff)), var(--bg, #f7f8fc);
+  background:
+    var(--gradSoft, linear-gradient(180deg, #f8f9ff, #eef2ff)),
+    var(--bg, #f7f8fc);
 }
 
 .appInner,
@@ -81,6 +89,7 @@
 
 .noscriptCard{
   width: min(420px, 100%);
+  max-width: 100%;
   padding: 22px 18px 18px;
   border-radius: 24px;
   background: rgba(255,255,255,.95);
@@ -136,6 +145,7 @@
 
 .desktopCard{
   width: min(420px, 100%);
+  max-width: 100%;
   padding: 20px 18px 18px;
   border-radius: 24px;
   background: rgba(255,255,255,.94);
@@ -179,11 +189,12 @@
   z-index: 1200;
 
   width: min(92vw, 520px);
+  max-width: calc(100vw - 24px - var(--safeLeft, 0px) - var(--safeRight, 0px));
   padding: 12px;
   border-radius: 20px;
 
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 12px;
   align-items: center;
 
@@ -221,6 +232,7 @@
   gap: 8px;
   flex-wrap: wrap;
   justify-content: flex-end;
+  min-width: 0;
 }
 
 /* =============================================================================
@@ -235,9 +247,9 @@
   width: 100%;
   padding:
     calc(12px + var(--safeTop, 0px))
-    calc(var(--pad) + var(--safeRight, 0px))
+    var(--shell-right)
     12px
-    calc(var(--pad) + var(--safeLeft, 0px));
+    var(--shell-left);
 
   display: flex;
   align-items: center;
@@ -248,12 +260,12 @@
   border-bottom: 1px solid rgba(22,26,45,.06);
   backdrop-filter: blur(16px);
   -webkit-backdrop-filter: blur(16px);
-
   box-shadow: 0 10px 26px rgba(0,0,0,.04);
 }
 
 .brand{
   min-width: 0;
+  flex: 1 1 auto;
   display: flex;
   align-items: center;
   gap: 10px;
@@ -272,6 +284,7 @@
 
 .brandText{
   min-width: 0;
+  flex: 1 1 auto;
 }
 
 .brandText .title{
@@ -300,6 +313,7 @@
   align-items: center;
   gap: 10px;
   flex: 0 0 auto;
+  min-width: 0;
 }
 
 /* =============================================================================
@@ -311,8 +325,8 @@
 .content,
 .contentWrap{
   width: 100%;
-  padding-left: calc(var(--pad) + var(--safeLeft, 0px));
-  padding-right: calc(var(--pad) + var(--safeRight, 0px));
+  padding-left: var(--shell-left);
+  padding-right: var(--shell-right);
 }
 
 .main,
@@ -327,14 +341,16 @@
 .hero{
   padding:
     10px
-    calc(var(--pad) + var(--safeRight, 0px))
+    var(--shell-right)
     8px
-    calc(var(--pad) + var(--safeLeft, 0px));
+    var(--shell-left);
 }
 
 .heroCard{
   display: grid;
   gap: 12px;
+  width: 100%;
+  min-width: 0;
   padding: 14px;
   border-radius: var(--hero-radius);
   background: rgba(255,255,255,.88);
@@ -352,6 +368,7 @@
   align-items: flex-start;
   justify-content: space-between;
   gap: 12px;
+  min-width: 0;
 }
 
 .heroInfo{
@@ -381,16 +398,21 @@
   align-items: center;
   gap: 8px;
   min-height: 34px;
+  max-width: 100%;
   padding: 7px 11px;
   border-radius: 999px;
   font-size: 13px;
   font-weight: 800;
   line-height: 1;
   color: rgba(11,16,32,.92);
+  white-space: nowrap;
 }
 
 .listPill,
 .tripPill{
+  min-width: 0;
+  overflow: hidden;
+  text-overflow: ellipsis;
   background: rgba(124,92,255,.10);
   border: 1px solid rgba(124,92,255,.16);
 }
@@ -400,11 +422,13 @@
   border: 1px solid rgba(255,111,169,.16);
   min-width: 68px;
   justify-content: center;
+  flex: 0 0 auto;
 }
 
 .progressWrap{
   display: grid;
   gap: 8px;
+  min-width: 0;
 }
 
 .progressMeta{
@@ -412,13 +436,16 @@
   align-items: center;
   justify-content: space-between;
   gap: 12px;
+  min-width: 0;
   font-size: 12px;
   font-weight: 800;
   color: var(--muted, #667085);
 }
 
-.progressTrack{
+.progressTrack,
+.progressBar{
   width: 100%;
+  min-width: 0;
   height: 12px;
 }
 
@@ -431,8 +458,19 @@
 .heroQuick,
 .quickActions{
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
+  min-width: 0;
+}
+
+.heroActions > *,
+.heroQuick > *,
+.quickActions > *,
+.bottombar > *,
+.bottomBar > *,
+.bottomDock > *{
+  width: 100%;
+  min-width: 0;
 }
 
 /* =============================================================================
@@ -442,9 +480,9 @@
 .tabs{
   padding:
     6px
-    calc(var(--pad) + var(--safeRight, 0px))
+    var(--shell-right)
     6px
-    calc(var(--pad) + var(--safeLeft, 0px));
+    var(--shell-left);
 }
 
 .tabRow,
@@ -452,6 +490,7 @@
 .categoriesRow{
   display: flex;
   gap: 8px;
+  min-width: 0;
   overflow-x: auto;
   overflow-y: hidden;
   -webkit-overflow-scrolling: touch;
@@ -504,11 +543,12 @@
 .itemsList,
 .items,
 .checklist{
+  width: 100%;
   padding:
     0
-    calc(var(--pad) + var(--safeRight, 0px))
+    var(--shell-right)
     14px
-    calc(var(--pad) + var(--safeLeft, 0px));
+    var(--shell-left);
   display: grid;
   gap: 10px;
 }
@@ -522,9 +562,9 @@
 .listEmpty{
   padding:
     6px
-    calc(var(--pad) + var(--safeRight, 0px))
+    var(--shell-right)
     12px
-    calc(var(--pad) + var(--safeLeft, 0px));
+    var(--shell-left);
 }
 
 .emptyCard,
@@ -595,6 +635,7 @@
   display: grid;
   grid-template-columns: repeat(3, minmax(0, 1fr));
   gap: 10px;
+  align-items: stretch;
 
   background: rgba(246,248,255,.82);
   border-top: 1px solid rgba(22,26,45,.06);
@@ -618,6 +659,7 @@
   left: 50%;
   bottom: calc(var(--bottom-bar-h) + 18px + var(--safeBottom, 0px));
   transform: translateX(-50%);
+  width: max-content;
   max-width: min(92vw, 420px);
   padding: 12px 14px;
   text-align: center;
@@ -665,19 +707,28 @@
 
 .modal{
   width: min(540px, 100%);
+  max-width: 100%;
   max-height: min(82dvh, 720px);
+  min-width: 0;
 }
 
 .modalHeader{
   display: flex;
-  align-items: center;
+  align-items: flex-start;
   justify-content: space-between;
   gap: 10px;
+  min-width: 0;
   padding: 14px 14px 12px;
   border-bottom: 1px solid rgba(22,26,45,.07);
 }
 
+.modalHeader > div:first-child{
+  min-width: 0;
+  flex: 1 1 auto;
+}
+
 .modalTitle,
+.modalHeader h2,
 .modalHeader h3{
   margin: 0;
   font-size: 16px;
@@ -692,12 +743,14 @@
   display: grid;
   gap: 12px;
   overflow: auto;
+  overflow-x: clip;
   max-height: calc(min(82dvh, 720px) - 64px);
+  min-width: 0;
 }
 
 .modalFooter{
   display: grid;
-  grid-template-columns: 1fr 1fr;
+  grid-template-columns: repeat(2, minmax(0, 1fr));
   gap: 10px;
   padding: 12px 14px 14px;
   border-top: 1px solid rgba(22,26,45,.06);
@@ -725,15 +778,20 @@
 }
 
 .settingRow{
-  display: flex;
+  display: grid;
+  grid-template-columns: minmax(0, 1fr) auto;
   align-items: center;
-  justify-content: space-between;
   gap: 14px;
+  min-width: 0;
   padding: 11px 12px;
   border-radius: 16px;
   background: rgba(22,26,45,.04);
   border: 1px solid rgba(22,26,45,.06);
   box-shadow: inset 0 1px 0 rgba(255,255,255,.55);
+}
+
+.settingMain{
+  min-width: 0;
 }
 
 .settingRight{
@@ -742,6 +800,12 @@
   gap: 8px;
   flex-wrap: wrap;
   justify-content: flex-end;
+  min-width: 0;
+  max-width: 100%;
+}
+
+.settingRight > *{
+  min-width: 0;
 }
 
 .settingRow.danger{
@@ -757,7 +821,7 @@
 
 .settingDesc{
   margin-top: 2px;
-  max-width: 280px;
+  max-width: 32ch;
   font-size: 12px;
   line-height: 1.3;
   color: var(--muted, #667085);
@@ -766,6 +830,7 @@
 .field{
   display: grid;
   gap: 6px;
+  min-width: 0;
 }
 
 .field > span,
@@ -786,9 +851,10 @@
 .modeRow,
 .listRow{
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
+  min-width: 0;
   padding: 10px 12px;
   border-radius: 16px;
   background: rgba(22,26,45,.04);
@@ -824,13 +890,17 @@
   display: inline-flex;
   gap: 8px;
   align-items: center;
+  flex-wrap: wrap;
+  justify-content: flex-end;
+  min-width: 0;
 }
 
 .modeCard{
   display: grid;
-  grid-template-columns: 1fr auto;
+  grid-template-columns: minmax(0, 1fr) auto;
   gap: 10px;
   align-items: center;
+  min-width: 0;
   padding: 12px;
 }
 
@@ -888,6 +958,8 @@
   align-items: center;
   gap: 8px;
   flex: 0 0 auto;
+  flex-wrap: wrap;
+  justify-content: flex-end;
 }
 
 /* =============================================================================
@@ -901,6 +973,7 @@
   display: inline-flex;
   align-items: center;
   justify-content: center;
+  flex: 0 0 auto;
 }
 
 .switch input{
@@ -977,7 +1050,7 @@
   SMALL SCREENS
 ============================================================================= */
 
-@media (max-width: 480px){
+@media (max-width: 560px){
   .updateBanner{
     grid-template-columns: 1fr;
   }
@@ -989,10 +1062,50 @@
   .updateActions > *{
     flex: 1 1 auto;
   }
+}
+
+@media (max-width: 480px){
+  .heroCard{
+    padding: 12px;
+  }
+
+  .heroTop,
+  .heroHeader{
+    align-items: stretch;
+    flex-wrap: wrap;
+  }
+
+  .heroTop > *,
+  .heroHeader > *{
+    max-width: 100%;
+  }
+
+  .btn,
+  .mini{
+    font-size: 15px;
+  }
+
+  .settingRow{
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
 
   .settingRight{
     width: 100%;
     justify-content: space-between;
+  }
+
+  .modeRow,
+  .listRow,
+  .modeCard{
+    grid-template-columns: 1fr;
+    align-items: stretch;
+  }
+
+  .modeRowActions,
+  .listRowActions,
+  .modeCardActions{
+    justify-content: flex-start;
   }
 }
 
@@ -1011,6 +1124,10 @@
 
   .modalFooter{
     grid-template-columns: 1fr;
+  }
+
+  .toast{
+    width: calc(100vw - 28px - var(--safeLeft, 0px) - var(--safeRight, 0px));
   }
 }
 
