@@ -1,153 +1,331 @@
 <!doctype html>
 <html lang="es">
 <head>
-  <meta charset="utf-8"/>
-  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
+  <meta charset="utf-8" />
+  <meta
+    name="viewport"
+    content="width=device-width, initial-scale=1, viewport-fit=cover"
+  />
+
   <title>Maleta · Checklist</title>
-  <meta name="description" content="Checklist rápido y offline"/>
-  <meta name="theme-color" content="#7c5cff"/>
-  <meta name="mobile-web-app-capable" content="yes"/>
-  <meta name="apple-mobile-web-app-capable" content="yes"/>
-  <meta name="apple-mobile-web-app-status-bar-style" content="default"/>
-  <meta name="apple-mobile-web-app-title" content="Maleta"/>
-  <link rel="manifest" href="./manifest.webmanifest"/>
-  <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png"/>
-  <link rel="apple-touch-icon" href="./icons/icon-192.png"/>
-  <link rel="preconnect" href="https://fonts.googleapis.com"/>
-  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
-  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
-  <link rel="stylesheet" href="./styles/main.css"/>
+  <meta
+    name="description"
+    content="Checklist rápido, offline y fácil de usar para organizar tus listas e ítems."
+  />
+  <meta name="theme-color" content="#7c5cff" />
+  <meta name="mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-capable" content="yes" />
+  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
+  <meta name="apple-mobile-web-app-title" content="Maleta" />
+
+  <link rel="manifest" href="./manifest.webmanifest" />
+  <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png" />
+  <link rel="apple-touch-icon" href="./icons/icon-192.png" />
+
+  <link rel="preconnect" href="https://fonts.googleapis.com" />
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin />
+  <link
+    href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap"
+    rel="stylesheet"
+  />
+
+  <link rel="stylesheet" href="./styles/main.css" />
 </head>
 <body>
+  <noscript>
+    <div class="toast show" role="alert">
+      Esta app necesita JavaScript para funcionar.
+    </div>
+  </noscript>
 
   <div id="app">
-
     <!-- Topbar -->
-    <header class="topbar">
-      <div class="brand">
-        <div class="logoDot"></div>
+    <header class="topbar" role="banner">
+      <div class="brand" aria-label="Marca de la aplicación">
+        <div class="logoDot" aria-hidden="true"></div>
         <div class="brandText">
           <h1 class="brandTitle">Maleta</h1>
           <p class="brandSub">Checklist rápido (offline)</p>
         </div>
       </div>
-      <button id="btnSettings" class="iconBtn" aria-label="Administrar listas" title="Mis listas">⚙️</button>
+
+      <button
+        id="btnSettings"
+        class="iconBtn"
+        type="button"
+        aria-label="Administrar listas"
+        title="Mis listas"
+      >
+        ⚙️
+      </button>
     </header>
 
-    <!-- Hero card -->
-    <section class="hero">
-      <div class="heroCard">
+    <main class="pageMain" role="main">
+      <!-- Hero -->
+      <section class="hero" aria-label="Resumen de la lista actual">
+        <div class="heroCard">
+          <button
+            id="tripPill"
+            class="pill"
+            type="button"
+            title="Cambiar lista"
+            aria-label="Lista activa"
+          >
+            🧾 Mi lista
+          </button>
 
-        <button id="tripPill" class="pill" title="Cambiar lista">🧾 Mi lista</button>
+          <div class="progressWrap" aria-label="Progreso de la lista">
+            <div class="progressMeta">
+              <span id="progressText">0/0</span>
+              <span id="progressPct">0%</span>
+            </div>
 
-        <div class="progressWrap">
-          <div class="progressMeta">
-            <span id="progressText">0/0</span>
-            <span id="progressPct">0%</span>
+            <div
+              class="progressBar"
+              id="progressBar"
+              role="progressbar"
+              aria-label="Porcentaje completado"
+              aria-valuemin="0"
+              aria-valuemax="100"
+              aria-valuenow="0"
+            >
+              <div class="progressFill" id="progressFill"></div>
+            </div>
           </div>
-          <div class="progressBar" id="progressBar" role="progressbar"
-               aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
-            <div class="progressFill" id="progressFill"></div>
+
+          <div class="heroActions">
+            <button id="btnAdd" class="btn primary" type="button">
+              ＋ Agregar
+            </button>
+            <button id="btnReset" class="btn" type="button">
+              ↺ Reiniciar
+            </button>
+          </div>
+
+          <div class="heroQuick" aria-label="Acciones rápidas">
+            <button id="btnSelectAll" class="btn mini" type="button">
+              ✅ Marcar todo
+            </button>
+            <button id="btnUncheckAll" class="btn mini" type="button">
+              ⬜ Quitar todo
+            </button>
           </div>
         </div>
+      </section>
 
-        <div class="heroActions">
-          <button id="btnAdd" class="btn primary">＋ Agregar</button>
-          <button id="btnReset" class="btn">↺ Reiniciar</button>
-        </div>
-
-        <div class="heroQuick">
-          <button id="btnSelectAll" class="btn mini">✅ Marcar todo</button>
-          <button id="btnUncheckAll" class="btn mini">⬜ Quitar todo</button>
-        </div>
-
-      </div>
-    </section>
-
-    <!-- Items list -->
-    <section id="list" class="list" aria-label="Lista de ítems"></section>
+      <!-- Lista de ítems -->
+      <section
+        id="list"
+        class="list"
+        aria-label="Lista de ítems"
+      ></section>
+    </main>
 
     <!-- Footer bar -->
-    <footer class="bottombar">
-      <button id="btnSelectAllFooter" class="footerBtn">✅ Todo</button>
-      <button id="btnUncheckAllFooter" class="footerBtn">⬜ Nada</button>
-      <button id="btnAddFooter" class="footerBtn accent">＋ Agregar</button>
+    <footer class="bottombar" role="contentinfo" aria-label="Acciones inferiores">
+      <button id="btnSelectAllFooter" class="footerBtn" type="button">
+        ✅ Todo
+      </button>
+      <button id="btnUncheckAllFooter" class="footerBtn" type="button">
+        ⬜ Nada
+      </button>
+      <button id="btnAddFooter" class="footerBtn accent" type="button">
+        ＋ Agregar
+      </button>
     </footer>
-
-  </div><!-- /#app -->
+  </div>
 
   <!-- Toast -->
-  <div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true"></div>
+  <div
+    id="toast"
+    class="toast"
+    role="status"
+    aria-live="polite"
+    aria-atomic="true"
+  ></div>
 
-  <!-- ───────────────────────────────────────────────────
-       Modal: Agregar ítem
-  ─────────────────────────────────────────────────── -->
+  <!-- Modal: Agregar ítem -->
   <div id="addOverlay" class="modalOverlay" aria-hidden="true">
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="addTitle">
+    <div
+      class="modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="addTitle"
+      aria-describedby="addDescription"
+    >
       <div class="modalHeader">
         <h2 class="modalTitle" id="addTitle">Agregar ítem</h2>
-        <button id="btnCloseAdd" class="closeBtn" aria-label="Cerrar">✕</button>
+        <button
+          id="btnCloseAdd"
+          class="closeBtn"
+          type="button"
+          aria-label="Cerrar"
+        >
+          ✕
+        </button>
       </div>
+
       <div class="modalBody">
-        <label class="field">
+        <p id="addDescription" class="modalHelp">
+          Agrega un nuevo elemento a cualquiera de tus listas.
+        </p>
+
+        <label class="field" for="newName">
           <span>Nombre</span>
-          <input id="newName" class="input" placeholder="Ej: Cargador, llaves, medias…"
-                 maxlength="80" autocomplete="off"/>
+          <input
+            id="newName"
+            class="input"
+            type="text"
+            placeholder="Ej: Cargador, llaves, medias…"
+            maxlength="80"
+            autocomplete="off"
+            enterkeyhint="done"
+          />
         </label>
-        <label class="field">
+
+        <label class="field" for="newEmoji">
           <span>Emoji (opcional)</span>
-          <input id="newEmoji" class="input emojiInput" placeholder="🔌"
-                 maxlength="4" autocomplete="off"/>
+          <input
+            id="newEmoji"
+            class="input emojiInput"
+            type="text"
+            placeholder="🔌"
+            maxlength="4"
+            autocomplete="off"
+            enterkeyhint="done"
+          />
         </label>
-        <label class="field">
+
+        <label class="field" for="newItemList">
           <span>Lista destino</span>
           <select id="newItemList" class="select"></select>
         </label>
-        <button id="btnCreate" class="btn primary full">Agregar a la lista</button>
+
+        <button id="btnCreate" class="btn primary full" type="button">
+          Agregar a la lista
+        </button>
       </div>
     </div>
   </div>
 
-  <!-- ───────────────────────────────────────────────────
-       Modal: Mis listas
-  ─────────────────────────────────────────────────── -->
+  <!-- Modal: Mis listas -->
   <div id="listsOverlay" class="modalOverlay" aria-hidden="true">
-    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="listsTitle">
+    <div
+      class="modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="listsTitle"
+      aria-describedby="listsDescription"
+    >
       <div class="modalHeader">
         <h2 class="modalTitle" id="listsTitle">Mis listas</h2>
-        <button id="btnCloseLists" class="closeBtn" aria-label="Cerrar">✕</button>
+        <button
+          id="btnCloseLists"
+          class="closeBtn"
+          type="button"
+          aria-label="Cerrar"
+        >
+          ✕
+        </button>
       </div>
+
       <div class="modalBody">
+        <p id="listsDescription" class="modalHelp">
+          Administra tus listas y deja preparada la app para respaldar tu información.
+        </p>
 
-        <div id="listsList" class="listsList"></div>
+        <div id="listsList" class="listsList" aria-label="Listas guardadas"></div>
 
-        <div class="divider"></div>
+        <div class="divider" aria-hidden="true"></div>
 
         <p class="sectionLabel">Nueva lista</p>
 
-        <label class="field">
+        <label class="field" for="newListName">
           <span>Nombre</span>
-          <input id="newListName" class="input" placeholder="Ej: Concierto, camping, ensayo…"
-                 maxlength="40" autocomplete="off"/>
+          <input
+            id="newListName"
+            class="input"
+            type="text"
+            placeholder="Ej: Concierto, camping, ensayo…"
+            maxlength="40"
+            autocomplete="off"
+            enterkeyhint="done"
+          />
         </label>
 
         <div class="inlineRow">
-          <label class="field grow">
+          <label class="field grow" for="newListIcon">
             <span>Emoji</span>
-            <input id="newListIcon" class="input emojiInput" placeholder="📋"
-                   maxlength="4" autocomplete="off"/>
+            <input
+              id="newListIcon"
+              class="input emojiInput"
+              type="text"
+              placeholder="📋"
+              maxlength="4"
+              autocomplete="off"
+              enterkeyhint="done"
+            />
           </label>
-          <button id="btnCreateList" class="btn primary selfEnd">Crear lista</button>
+
+          <button
+            id="btnCreateList"
+            class="btn primary selfEnd"
+            type="button"
+          >
+            Crear lista
+          </button>
         </div>
 
+        <div class="divider" aria-hidden="true"></div>
+
+        <!-- Preparado para export/import -->
+        <section class="backupSection" aria-labelledby="backupTitle">
+          <p id="backupTitle" class="sectionLabel">Respaldo de datos</p>
+          <p class="modalHelp">
+            Exporta tus listas e ítems a un archivo JSON o importa un respaldo cuando
+            actualices la app. Porque perder datos por una actualización boba ya sería
+            muy de la especie.
+          </p>
+
+          <div class="heroQuick backupActions">
+            <button
+              id="btnExportData"
+              class="btn mini"
+              type="button"
+              title="Exportar respaldo"
+            >
+              ⬇️ Exportar
+            </button>
+
+            <button
+              id="btnImportData"
+              class="btn mini"
+              type="button"
+              title="Importar respaldo"
+            >
+              ⬆️ Importar
+            </button>
+          </div>
+
+          <input
+            id="importFileInput"
+            type="file"
+            accept=".json,application/json"
+            hidden
+            aria-hidden="true"
+            tabindex="-1"
+          />
+        </section>
       </div>
     </div>
   </div>
 
   <script src="./src/app.js"></script>
   <script>
-    if ('serviceWorker' in navigator) {
-      navigator.serviceWorker.register('./sw.js').catch(() => {});
+    if ("serviceWorker" in navigator) {
+      window.addEventListener("load", () => {
+        navigator.serviceWorker.register("./sw.js").catch(() => {});
+      });
     }
   </script>
 </body>
