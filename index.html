@@ -1,624 +1,154 @@
 <!doctype html>
-<html lang="es-CO">
+<html lang="es">
 <head>
-  <meta charset="utf-8" />
-  <meta
-    name="viewport"
-    content="width=device-width, initial-scale=1, viewport-fit=cover, user-scalable=no"
-  />
-
+  <meta charset="utf-8"/>
+  <meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover"/>
   <title>Maleta · Checklist</title>
-  <meta
-    name="description"
-    content="Checklist rápido, bonito y offline para crear y organizar listas sin olvidar nada."
-  />
-
-  <meta name="theme-color" content="#0C41C4" />
-  <meta name="color-scheme" content="light" />
-  <meta name="format-detection" content="telephone=no" />
-  <meta name="mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-capable" content="yes" />
-  <meta name="apple-mobile-web-app-status-bar-style" content="default" />
-  <meta name="apple-mobile-web-app-title" content="Maleta" />
-
-  <link rel="manifest" href="./manifest.webmanifest" />
-
-  <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png" />
-  <link rel="apple-touch-icon" href="./icons/icon-192.png" />
-
-  <link rel="stylesheet" href="./styles/base.css" />
-  <link rel="stylesheet" href="./styles/theme.css" />
-  <link rel="stylesheet" href="./styles/components.css" />
-  <link rel="stylesheet" href="./styles/app.css" />
+  <meta name="description" content="Checklist rápido y offline"/>
+  <meta name="theme-color" content="#7c5cff"/>
+  <meta name="mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-capable" content="yes"/>
+  <meta name="apple-mobile-web-app-status-bar-style" content="default"/>
+  <meta name="apple-mobile-web-app-title" content="Maleta"/>
+  <link rel="manifest" href="./manifest.webmanifest"/>
+  <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png"/>
+  <link rel="apple-touch-icon" href="./icons/icon-192.png"/>
+  <link rel="preconnect" href="https://fonts.googleapis.com"/>
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin/>
+  <link href="https://fonts.googleapis.com/css2?family=Outfit:wght@400;500;600;700;800&display=swap" rel="stylesheet"/>
+  <link rel="stylesheet" href="./styles/main.css"/>
 </head>
-
 <body>
-  <a class="skipLink" href="#list">Saltar al checklist</a>
 
-  <noscript>
-    <div class="noscript">
-      <div class="noscriptCard">
-        <div class="noscriptEmoji">🧠</div>
-        <h2>Se necesita JavaScript</h2>
-        <p>
-          Esta app funciona offline con lógica local.
-          Activa JavaScript y vuelve.
-        </p>
-      </div>
-    </div>
-  </noscript>
+  <div id="app">
 
-  <div id="desktopBlock" class="desktopBlock" aria-hidden="true">
-    <div
-      class="desktopCard"
-      role="dialog"
-      aria-modal="true"
-      aria-labelledby="desktopBlockTitle"
-      aria-describedby="desktopBlockDesc"
-    >
-      <div class="desktopEmoji" aria-hidden="true">📱</div>
-      <h2 id="desktopBlockTitle">Solo mobile</h2>
-      <p id="desktopBlockDesc">
-        Esta app está pensada para usarse en el cel.
-        Ábrela desde el teléfono y ya.
-      </p>
-    </div>
-  </div>
-
-  <div id="updateBanner" class="updateBanner" hidden aria-live="polite">
-    <div class="updateText">
-      <strong>Nueva versión disponible</strong>
-      <span>Actualiza para tener lo último.</span>
-    </div>
-
-    <div class="updateActions">
-      <button class="btn mini" id="btnUpdateLater" type="button">Luego</button>
-      <button class="btn primary mini" id="btnUpdateNow" type="button">Actualizar</button>
-    </div>
-  </div>
-
-  <main class="app" id="app" aria-label="Aplicación de checklist">
-    <header class="topbar" aria-label="Barra superior">
-      <div class="brand" aria-label="Maleta Checklist">
-        <div class="logoDot" aria-hidden="true"></div>
-
+    <!-- Topbar -->
+    <header class="topbar">
+      <div class="brand">
+        <div class="logoDot"></div>
         <div class="brandText">
-          <div class="title">Maleta</div>
-          <div class="subtitle">Checklist rápido (offline)</div>
+          <h1 class="brandTitle">Maleta</h1>
+          <p class="brandSub">Checklist rápido (offline)</p>
         </div>
       </div>
-
-      <div class="topbarActions" aria-label="Acciones superiores">
-        <button
-          class="btn ghost"
-          id="btnSettings"
-          type="button"
-          aria-label="Abrir ajustes"
-          title="Ajustes"
-        >
-          <span class="icon" aria-hidden="true">⚙️</span>
-        </button>
-      </div>
+      <button id="btnSettings" class="iconBtn" aria-label="Administrar listas" title="Mis listas">⚙️</button>
     </header>
 
-    <section class="hero" aria-label="Progreso">
+    <!-- Hero card -->
+    <section class="hero">
       <div class="heroCard">
-        <div class="heroTop">
-          <div class="pill" id="tripPill" aria-label="Lista actual">🧾 Mi lista</div>
 
-          <div
-            class="streak"
-            id="streakChip"
-            title="Veces que completaste todo"
-            aria-label="Racha"
-          >
-            ✨ 0
-          </div>
-        </div>
+        <button id="tripPill" class="pill" title="Cambiar lista">🧾 Mi lista</button>
 
         <div class="progressWrap">
-          <div class="progressMeta" aria-live="polite">
+          <div class="progressMeta">
             <span id="progressText">0/0</span>
             <span id="progressPct">0%</span>
           </div>
-
-          <div
-            class="progressBar"
-            id="progressBar"
-            role="progressbar"
-            aria-label="Progreso del checklist"
-            aria-valuemin="0"
-            aria-valuemax="100"
-            aria-valuenow="0"
-          >
+          <div class="progressBar" id="progressBar" role="progressbar"
+               aria-valuemin="0" aria-valuemax="100" aria-valuenow="0">
             <div class="progressFill" id="progressFill"></div>
           </div>
         </div>
 
-        <div class="heroActions" aria-label="Acciones principales">
-          <button class="btn primary" id="btnAdd" type="button" aria-label="Agregar ítem">
-            <span aria-hidden="true">＋</span> Agregar
-          </button>
-
-          <button class="btn" id="btnReset" type="button" aria-label="Reiniciar checklist">
-            <span aria-hidden="true">↺</span> Reiniciar
-          </button>
+        <div class="heroActions">
+          <button id="btnAdd" class="btn primary">＋ Agregar</button>
+          <button id="btnReset" class="btn">↺ Reiniciar</button>
         </div>
 
-        <div class="heroQuick" aria-label="Acciones rápidas">
-          <button class="btn mini" id="btnSelectAll" type="button" aria-label="Marcar todo">
-            ✅ Marcar todo
-          </button>
-          <button class="btn mini" id="btnUncheckAll" type="button" aria-label="Quitar todo">
-            ⬜ Quitar todo
-          </button>
+        <div class="heroQuick">
+          <button id="btnSelectAll" class="btn mini">✅ Marcar todo</button>
+          <button id="btnUncheckAll" class="btn mini">⬜ Quitar todo</button>
         </div>
+
       </div>
     </section>
 
-    <section class="tabs" aria-label="Categorías">
-      <div class="tabRow" id="tabRow" role="tablist" aria-label="Categorías"></div>
-    </section>
+    <!-- Items list -->
+    <section id="list" class="list" aria-label="Lista de ítems"></section>
 
-    <section class="list" id="list" aria-label="Checklist" tabindex="-1"></section>
-
-    <footer class="bottombar" aria-label="Acciones rápidas">
-      <button
-        class="mini"
-        id="btnSelectAllFooter"
-        type="button"
-        aria-label="Marcar todo"
-      >
-        ✅ Todo
-      </button>
-
-      <button
-        class="mini"
-        id="btnUncheckAllFooter"
-        type="button"
-        aria-label="Quitar todo"
-      >
-        ⬜ Nada
-      </button>
-
-      <button
-        class="mini"
-        id="btnAddFooter"
-        type="button"
-        aria-label="Agregar ítem"
-      >
-        ＋ Agregar
-      </button>
+    <!-- Footer bar -->
+    <footer class="bottombar">
+      <button id="btnSelectAllFooter" class="footerBtn">✅ Todo</button>
+      <button id="btnUncheckAllFooter" class="footerBtn">⬜ Nada</button>
+      <button id="btnAddFooter" class="footerBtn accent">＋ Agregar</button>
     </footer>
 
-    <div class="toast" id="toast" role="status" aria-live="polite"></div>
+  </div><!-- /#app -->
 
-    <div class="modalOverlay" id="settingsOverlay" aria-hidden="true">
-      <div
-        class="modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="settingsTitle"
-        aria-describedby="settingsDesc"
-        tabindex="-1"
-      >
-        <div class="modalHeader">
-          <div>
-            <h3 class="modalTitle" id="settingsTitle">Ajustes</h3>
-            <p class="sr-only" id="settingsDesc">
-              Configura la lista activa, sonido y opciones generales.
-            </p>
-          </div>
+  <!-- Toast -->
+  <div id="toast" class="toast" role="status" aria-live="polite" aria-atomic="true"></div>
 
-          <button
-            class="btn ghost"
-            id="btnCloseSettings"
-            type="button"
-            aria-label="Cerrar ajustes"
-            title="Cerrar"
-          >
-            ✕
-          </button>
-        </div>
-
-        <div class="modalBody">
-          <div class="settingGroup" aria-label="Configuración principal">
-            <div class="settingRow">
-              <div>
-                <div class="settingTitle">Lista activa</div>
-                <div class="settingDesc">
-                  Cada lista funciona por separado.
-                </div>
-              </div>
-
-              <div class="settingRight">
-                <select id="tripMode" class="select" aria-label="Seleccionar lista activa">
-                  <option value="">Cargando listas...</option>
-                </select>
-
-                <button
-                  class="btn mini"
-                  id="btnManageModes"
-                  type="button"
-                  aria-label="Editar listas"
-                  title="Editar listas"
-                >
-                  ✏️
-                </button>
-              </div>
-            </div>
-
-            <div class="settingRow">
-              <div>
-                <div class="settingTitle">Soniditos</div>
-                <div class="settingDesc">
-                  Un tick al marcar, si no les da rabia.
-                </div>
-              </div>
-
-              <label class="switch" aria-label="Activar sonido">
-                <input type="checkbox" id="toggleSound" checked />
-                <span class="slider"></span>
-              </label>
-            </div>
-
-            <div class="settingRow">
-              <div>
-                <div class="settingTitle">Movimiento reducido</div>
-                <div class="settingDesc">
-                  Para dejar la interfaz más tranquila.
-                </div>
-              </div>
-
-              <label class="switch" aria-label="Reducir movimiento">
-                <input type="checkbox" id="toggleMotion" />
-                <span class="slider"></span>
-              </label>
-            </div>
-          </div>
-
-          <div class="settingGroup" aria-label="Acciones peligrosas">
-            <div class="settingRow danger">
-              <div>
-                <div class="settingTitle">Borrar datos</div>
-                <div class="settingDesc">
-                  Elimina listas y progreso guardado.
-                </div>
-              </div>
-
-              <button class="btn danger" id="btnWipe" type="button" aria-label="Borrar todo">
-                Borrar
-              </button>
-            </div>
-          </div>
-        </div>
+  <!-- ───────────────────────────────────────────────────
+       Modal: Agregar ítem
+  ─────────────────────────────────────────────────── -->
+  <div id="addOverlay" class="modalOverlay" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="addTitle">
+      <div class="modalHeader">
+        <h2 class="modalTitle" id="addTitle">Agregar ítem</h2>
+        <button id="btnCloseAdd" class="closeBtn" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="modalBody">
+        <label class="field">
+          <span>Nombre</span>
+          <input id="newName" class="input" placeholder="Ej: Cargador, llaves, medias…"
+                 maxlength="80" autocomplete="off"/>
+        </label>
+        <label class="field">
+          <span>Emoji (opcional)</span>
+          <input id="newEmoji" class="input emojiInput" placeholder="🔌"
+                 maxlength="4" autocomplete="off"/>
+        </label>
+        <label class="field">
+          <span>Lista destino</span>
+          <select id="newItemList" class="select"></select>
+        </label>
+        <button id="btnCreate" class="btn primary full">Agregar a la lista</button>
       </div>
     </div>
+  </div>
 
-    <div
-      class="modalOverlay"
-      id="modesOverlay"
-      aria-hidden="true"
-      data-list-id=""
-    >
-      <div
-        class="modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="modesTitle"
-        aria-describedby="modesDesc"
-        tabindex="-1"
-      >
-        <div class="modalHeader">
-          <div>
-            <h3 class="modalTitle" id="modesTitle">Editar listas</h3>
-            <p class="sr-only" id="modesDesc">
-              Aquí puedes seleccionar una lista, renombrarla, crear una nueva o eliminar una existente.
-            </p>
-          </div>
+  <!-- ───────────────────────────────────────────────────
+       Modal: Mis listas
+  ─────────────────────────────────────────────────── -->
+  <div id="listsOverlay" class="modalOverlay" aria-hidden="true">
+    <div class="modal" role="dialog" aria-modal="true" aria-labelledby="listsTitle">
+      <div class="modalHeader">
+        <h2 class="modalTitle" id="listsTitle">Mis listas</h2>
+        <button id="btnCloseLists" class="closeBtn" aria-label="Cerrar">✕</button>
+      </div>
+      <div class="modalBody">
 
-          <button
-            class="btn ghost"
-            id="btnCloseModes"
-            type="button"
-            aria-label="Cerrar editor de listas"
-            title="Cerrar"
-          >
-            ✕
-          </button>
+        <div id="listsList" class="listsList"></div>
+
+        <div class="divider"></div>
+
+        <p class="sectionLabel">Nueva lista</p>
+
+        <label class="field">
+          <span>Nombre</span>
+          <input id="newListName" class="input" placeholder="Ej: Concierto, camping, ensayo…"
+                 maxlength="40" autocomplete="off"/>
+        </label>
+
+        <div class="inlineRow">
+          <label class="field grow">
+            <span>Emoji</span>
+            <input id="newListIcon" class="input emojiInput" placeholder="📋"
+                   maxlength="4" autocomplete="off"/>
+          </label>
+          <button id="btnCreateList" class="btn primary selfEnd">Crear lista</button>
         </div>
 
-        <div class="modalBody">
-          <div class="hint">
-            Selecciona una lista. Si escribes un nombre distinto, podrás crear una nueva o renombrar la actual.
-          </div>
-
-          <label class="field">
-            <span>Lista actual</span>
-            <select id="modeEditorSelect" class="select" aria-label="Seleccionar lista para editar">
-              <option value="">Cargando listas...</option>
-            </select>
-          </label>
-
-          <label class="field">
-            <span>Nombre de la lista</span>
-            <input
-              id="newModeName"
-              class="input"
-              placeholder="Ej: Concierto, camping, ensayo..."
-              maxlength="40"
-              autocomplete="off"
-              aria-describedby="modeNameHint"
-            />
-          </label>
-
-          <div class="hint" id="modeNameHint">
-            Ítems en esta lista: <strong id="modeItemsCount">0</strong>
-          </div>
-
-          <div class="heroQuick" aria-label="Acciones de la lista">
-            <button
-              class="btn primary mini"
-              id="btnCreateMode"
-              type="button"
-              aria-label="Guardar cambios o crear lista"
-            >
-              Guardar lista
-            </button>
-
-            <button
-              class="btn danger mini"
-              id="btnDeleteMode"
-              type="button"
-              aria-label="Eliminar lista seleccionada"
-            >
-              Eliminar
-            </button>
-          </div>
-
-          <div class="divider" aria-hidden="true"></div>
-
-          <div class="modesList" id="modesList" aria-label="Listas disponibles"></div>
-        </div>
       </div>
     </div>
+  </div>
 
-    <div class="modalOverlay" id="addOverlay" aria-hidden="true">
-      <div
-        class="modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="addTitle"
-        aria-describedby="addDesc"
-        tabindex="-1"
-      >
-        <div class="modalHeader">
-          <div>
-            <h3 class="modalTitle" id="addTitle">Agregar</h3>
-            <p class="sr-only" id="addDesc">
-              Crea un nuevo ítem y asígnalo a la lista que quieras.
-            </p>
-          </div>
-
-          <button
-            class="btn ghost"
-            id="btnCloseAdd"
-            type="button"
-            aria-label="Cerrar agregar"
-            title="Cerrar"
-          >
-            ✕
-          </button>
-        </div>
-
-        <div class="modalBody">
-          <label class="field">
-            <span>Nombre</span>
-            <input
-              id="newName"
-              class="input"
-              placeholder="Ej: Cargador, llaves, medias..."
-              maxlength="80"
-              autocomplete="off"
-            />
-          </label>
-
-          <label class="field">
-            <span>Categoría</span>
-            <select id="newCat" class="select" aria-label="Seleccionar categoría">
-              <option value="general">General</option>
-            </select>
-          </label>
-
-          <label class="field">
-            <span>Emoji (opcional)</span>
-            <input
-              id="newEmoji"
-              class="input"
-              placeholder="Ej: 🔌"
-              maxlength="8"
-              autocomplete="off"
-            />
-          </label>
-
-          <label class="field">
-            <span>Lista destino</span>
-            <select id="newModeTarget" class="select" aria-label="Seleccionar lista destino">
-              <option value="">Cargando listas...</option>
-            </select>
-          </label>
-
-          <button class="btn primary full" id="btnCreate" type="button">
-            Agregar a la lista
-          </button>
-        </div>
-      </div>
-    </div>
-
-    <div class="modalOverlay" id="editOverlay" aria-hidden="true" data-editing-id="">
-      <div
-        class="modal"
-        role="dialog"
-        aria-modal="true"
-        aria-labelledby="editTitle"
-        aria-describedby="editDesc"
-        tabindex="-1"
-      >
-        <div class="modalHeader">
-          <div>
-            <h3 class="modalTitle" id="editTitle">Editar</h3>
-            <p class="sr-only" id="editDesc">
-              Edita un ítem existente o agrégalo también a otra lista.
-            </p>
-          </div>
-
-          <button
-            class="btn ghost"
-            id="btnCloseEdit"
-            type="button"
-            aria-label="Cerrar editar"
-            title="Cerrar"
-          >
-            ✕
-          </button>
-        </div>
-
-        <div class="modalBody">
-          <label class="field">
-            <span>Nombre</span>
-            <input
-              id="editName"
-              class="input"
-              placeholder="Ej: Cargador, llaves..."
-              maxlength="80"
-              autocomplete="off"
-            />
-          </label>
-
-          <label class="field">
-            <span>Categoría</span>
-            <select id="editCat" class="select" aria-label="Editar categoría">
-              <option value="general">General</option>
-            </select>
-          </label>
-
-          <label class="field">
-            <span>Emoji (opcional)</span>
-            <input
-              id="editEmoji"
-              class="input"
-              placeholder="Ej: 🔑"
-              maxlength="8"
-              autocomplete="off"
-            />
-          </label>
-
-          <button class="btn primary full" id="btnSaveEdit" type="button">
-            Guardar cambios
-          </button>
-
-          <div class="divider" aria-hidden="true"></div>
-
-          <div class="hint">
-            ¿También lo quieren en otra lista? Lo agrega sin quitarlo de esta.
-          </div>
-
-          <label class="field">
-            <span>Agregar también a lista</span>
-            <select id="dupMode" class="select" aria-label="Agregar también a otra lista">
-              <option value="">Cargando listas...</option>
-            </select>
-          </label>
-
-          <button class="btn full" id="btnAddToMode" type="button">
-            Agregar a esa lista
-          </button>
-        </div>
-      </div>
-    </div>
-  </main>
-
+  <script src="./src/app.js"></script>
   <script>
-    (function () {
-      const byId = (id) => document.getElementById(id);
-
-      function mirrorClick(sourceId, targetId) {
-        const source = byId(sourceId);
-        const target = byId(targetId);
-        if (!source || !target) return;
-
-        source.addEventListener(
-          'click',
-          () => {
-            target.click();
-          },
-          { passive: true }
-        );
-      }
-
-      mirrorClick('btnSelectAllFooter', 'btnSelectAll');
-      mirrorClick('btnUncheckAllFooter', 'btnUncheckAll');
-      mirrorClick('btnAddFooter', 'btnAdd');
-    })();
+    if ('serviceWorker' in navigator) {
+      navigator.serviceWorker.register('./sw.js').catch(() => {});
+    }
   </script>
-
-  <script>
-    (function () {
-      if (!('serviceWorker' in navigator)) return;
-
-      let refreshing = false;
-
-      navigator.serviceWorker
-        .register('./sw.js')
-        .then((reg) => {
-          if (reg.waiting && navigator.serviceWorker.controller) {
-            showUpdateBanner(reg.waiting);
-          }
-
-          reg.addEventListener('updatefound', () => {
-            const newWorker = reg.installing;
-            if (!newWorker) return;
-
-            newWorker.addEventListener('statechange', () => {
-              if (newWorker.state === 'installed' && navigator.serviceWorker.controller) {
-                showUpdateBanner(newWorker);
-              }
-            });
-          });
-        })
-        .catch((err) => {
-          console.warn('No se pudo registrar el Service Worker:', err);
-        });
-
-      navigator.serviceWorker.addEventListener('controllerchange', () => {
-        if (refreshing) return;
-        refreshing = true;
-        location.reload();
-      });
-
-      function showUpdateBanner(worker) {
-        const banner = document.getElementById('updateBanner');
-        const btnNow = document.getElementById('btnUpdateNow');
-        const btnLater = document.getElementById('btnUpdateLater');
-        if (!banner || !btnNow || !btnLater) return;
-
-        banner.hidden = false;
-
-        btnNow.onclick = () => {
-          try {
-            worker.postMessage({ type: 'SKIP_WAITING' });
-          } catch (error) {
-            console.warn('No se pudo activar la nueva versión:', error);
-          }
-        };
-
-        btnLater.onclick = () => {
-          banner.hidden = true;
-        };
-      }
-    })();
-  </script>
-
-  <script type="module" src="./src/app.js"></script>
 </body>
 </html>
