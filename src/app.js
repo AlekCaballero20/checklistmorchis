@@ -353,6 +353,7 @@ function loadState() {
 }
 
 let state = loadState();
+let duplicateItemId = '';
 
 function save() {
   try {
@@ -559,6 +560,35 @@ function addItem(text, emoji = '', listId) {
   return item;
 }
 
+function duplicateItemToList(itemId, targetListId) {
+  const source = state.items.find(item => item.id === itemId);
+  const cleanTargetId = safeString(targetListId).trim();
+
+  if (!source) return { ok: false, reason: 'missing-item' };
+  if (!cleanTargetId) return { ok: false, reason: 'missing-list' };
+  if (!state.lists.find(list => list.id === cleanTargetId)) {
+    return { ok: false, reason: 'missing-list' };
+  }
+  if (source.listId === cleanTargetId) {
+    return { ok: false, reason: 'same-list' };
+  }
+
+  const duplicateExists = state.items.some(item =>
+    item.listId === cleanTargetId &&
+    normalizeText(item.text) === normalizeText(source.text) &&
+    safeString(item.emoji).trim() === safeString(source.emoji).trim()
+  );
+
+  if (duplicateExists) {
+    return { ok: false, reason: 'already-exists' };
+  }
+
+  const copy = addItem(source.text, source.emoji, cleanTargetId);
+  if (!copy) return { ok: false, reason: 'create-failed' };
+
+  return { ok: true, item: copy };
+}
+
 function toggleItem(id) {
   const item = state.items.find(entry => entry.id === id);
   if (!item) return false;
@@ -604,6 +634,7 @@ function render() {
   renderItems();
   renderListsManager();
   populateListSelect('newItemList');
+  populateListSelect('duplicateItemList');
 }
 
 function renderHero() {
@@ -674,6 +705,17 @@ function renderItems() {
       <span class="itemLabel">
         ${item.emoji ? `${esc(item.emoji)} ` : ''}${esc(item.text)}
       </span>
+
+      <button
+        class="itemDuplicate"
+        type="button"
+        data-action="duplicate-item"
+        data-id="${esc(item.id)}"
+        aria-label="Duplicar ítem en otra lista"
+        title="Duplicar en otra lista"
+      >
+        ⧉
+      </button>
 
       <button
         class="itemDelete"
@@ -776,7 +818,7 @@ function openModal(id, returnEl) {
   const overlay = $(id);
   if (!overlay) return;
 
-  ['addOverlay', 'listsOverlay'].forEach(otherId => {
+  ['addOverlay', 'duplicateOverlay', 'listsOverlay'].forEach(otherId => {
     if (otherId !== id) hideModalSilently(otherId);
   });
 
@@ -799,6 +841,10 @@ function closeModal(id) {
   overlay.setAttribute('aria-hidden', 'true');
   syncBodyScrollLock();
 
+  if (id === 'duplicateOverlay') {
+    duplicateItemId = '';
+  }
+
   if (wasOpen && returnFocusEl) {
     returnFocusEl.focus();
     returnFocusEl = null;
@@ -806,7 +852,7 @@ function closeModal(id) {
 }
 
 function closeAllModals() {
-  ['addOverlay', 'listsOverlay'].forEach(hideModalSilently);
+  ['addOverlay', 'duplicateOverlay', 'listsOverlay'].forEach(hideModalSilently);
   syncBodyScrollLock();
 }
 
@@ -832,6 +878,35 @@ function openListsModal(returnEl) {
   if (newListIcon) newListIcon.value = '';
 
   openModal('listsOverlay', returnEl);
+}
+
+function openDuplicateModal(itemId, returnEl) {
+  const item = state.items.find(entry => entry.id === itemId);
+  if (!item) {
+    showToast('No se encontró el ítem');
+    return;
+  }
+
+  if (state.lists.length < 2) {
+    showToast('Crea otra lista para poder duplicar');
+    return;
+  }
+
+  duplicateItemId = item.id;
+  populateListSelect('duplicateItemList');
+
+  const preview = $('duplicateItemPreview');
+  const select = $('duplicateItemList');
+
+  if (preview) {
+    preview.textContent = `${item.emoji ? `${item.emoji} ` : ''}${item.text}`;
+  }
+
+  if (select) {
+    select.value = state.lists.find(list => list.id !== item.listId)?.id || item.listId;
+  }
+
+  openModal('duplicateOverlay', returnEl);
 }
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -900,6 +975,31 @@ function doAddList() {
   showToast('✅ Lista creada');
 }
 
+function doDuplicateItem() {
+  const targetListId = $('duplicateItemList')?.value || '';
+  const result = duplicateItemToList(duplicateItemId, targetListId);
+
+  if (!result.ok) {
+    if (result.reason === 'same-list') {
+      showToast('Elige una lista diferente');
+      return;
+    }
+
+    if (result.reason === 'already-exists') {
+      showToast('Ese ítem ya existe en la lista destino');
+      return;
+    }
+
+    showToast('No se pudo duplicar el ítem');
+    return;
+  }
+
+  duplicateItemId = '';
+  closeModal('duplicateOverlay');
+  render();
+  showToast('✅ Ítem duplicado');
+}
+
 /* ────────────────────────────────────────────────────────────────────────────
    EVENTOS
 ──────────────────────────────────────────────────────────────────────────── */
@@ -928,6 +1028,11 @@ function bindEvents() {
           render();
           showToast('Ítem eliminado');
         }
+        break;
+      }
+
+      case 'duplicate-item': {
+        openDuplicateModal(id, actionEl);
         break;
       }
 
@@ -968,6 +1073,7 @@ function bindEvents() {
 
   // Cerrar modales
   on('btnCloseAdd', 'click', () => closeModal('addOverlay'));
+  on('btnCloseDuplicate', 'click', () => closeModal('duplicateOverlay'));
   on('btnCloseLists', 'click', () => closeModal('listsOverlay'));
 
   // Crear ítem
@@ -993,6 +1099,18 @@ function bindEvents() {
   on('newItemList', 'keydown', event => {
     if (event.key === 'Escape') {
       closeModal('addOverlay');
+    }
+  });
+
+  // Duplicar ítem
+  on('btnConfirmDuplicate', 'click', doDuplicateItem);
+  on('duplicateItemList', 'keydown', event => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      doDuplicateItem();
+    }
+    if (event.key === 'Escape') {
+      closeModal('duplicateOverlay');
     }
   });
 
