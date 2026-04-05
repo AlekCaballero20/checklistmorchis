@@ -328,6 +328,7 @@ body {
 .footerBtn,
 .closeBtn,
 .itemToggle,
+.itemDuplicate,
 .itemDelete,
 .listChipLabel,
 .listChipDelete {
@@ -541,6 +542,7 @@ body {
   text-decoration: line-through;
 }
 
+.itemDuplicate,
 .itemDelete {
   width: 30px;
   height: 30px;
@@ -562,19 +564,35 @@ body {
     transform 0.12s ease;
 }
 
+.itemDuplicate {
+  font-size: 14px;
+}
+
+.item:hover .itemDuplicate,
+.item:focus-within .itemDuplicate,
 .item:hover .itemDelete,
 .item:focus-within .itemDelete {
   opacity: 1;
 }
 
 @media (hover: none) {
+  .itemDuplicate,
   .itemDelete {
     opacity: 0.5;
   }
 }
 
+.itemDuplicate:active,
 .itemDelete:active {
   transform: scale(0.92);
+}
+
+.itemDuplicate:active {
+  background: rgba(124, 92, 255, 0.12);
+  color: var(--purple);
+}
+
+.itemDelete:active {
   background: rgba(229, 62, 62, 0.12);
   color: var(--danger);
 }
@@ -797,6 +815,24 @@ body {
   font-size: 13px;
   line-height: 1.45;
   color: var(--muted);
+}
+
+.itemPreview {
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+  padding: 14px;
+  border: 1px solid rgba(124, 92, 255, 0.14);
+  border-radius: 16px;
+  background: var(--grad-soft);
+}
+
+.itemPreviewText {
+  font-size: 16px;
+  line-height: 1.35;
+  font-weight: 700;
+  color: var(--text);
+  word-break: break-word;
 }
 
 /* ────────────────────────────────────────────────────────────────────────────
