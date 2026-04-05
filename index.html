@@ -208,6 +208,49 @@
     </div>
   </div>
 
+  <!-- Modal: Duplicar ítem -->
+  <div id="duplicateOverlay" class="modalOverlay" aria-hidden="true">
+    <div
+      class="modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="duplicateTitle"
+      aria-describedby="duplicateDescription"
+    >
+      <div class="modalHeader">
+        <h2 class="modalTitle" id="duplicateTitle">Duplicar ítem</h2>
+        <button
+          id="btnCloseDuplicate"
+          class="closeBtn"
+          type="button"
+          aria-label="Cerrar"
+        >
+          ✕
+        </button>
+      </div>
+
+      <div class="modalBody">
+        <p id="duplicateDescription" class="modalHelp">
+          Copia este ítem a otra lista sin borrarlo de la lista actual.
+        </p>
+
+        <div class="itemPreview">
+          <span class="sectionLabel">Ítem seleccionado</span>
+          <strong id="duplicateItemPreview" class="itemPreviewText">-</strong>
+        </div>
+
+        <label class="field" for="duplicateItemList">
+          <span>Lista destino</span>
+          <select id="duplicateItemList" class="select"></select>
+        </label>
+
+        <button id="btnConfirmDuplicate" class="btn primary full" type="button">
+          Duplicar a la lista
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal: Mis listas -->
   <div id="listsOverlay" class="modalOverlay" aria-hidden="true">
     <div
