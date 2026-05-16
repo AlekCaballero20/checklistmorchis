@@ -1095,3 +1095,104 @@ body {
     scroll-behavior: auto !important;
   }
 }
+
+/* ────────────────────────────────────────────────────────────────────────────
+   FIREBASE AUTH / SYNC
+──────────────────────────────────────────────────────────────────────────── */
+[hidden] {
+  display: none !important;
+}
+
+.authGate {
+  width: 100%;
+  min-height: 100dvh;
+  display: grid;
+  place-items: center;
+  padding: 24px;
+  background:
+    radial-gradient(circle at top left, rgba(124, 92, 255, 0.24), transparent 32%),
+    radial-gradient(circle at bottom right, rgba(255, 111, 169, 0.18), transparent 30%),
+    linear-gradient(160deg, #ddd5ff 0%, #f6d7e9 100%);
+}
+
+.authCard {
+  width: min(100%, 420px);
+  padding: 28px;
+  border-radius: 30px;
+  background: rgba(255, 255, 255, 0.94);
+  border: 1px solid rgba(255, 255, 255, 0.72);
+  box-shadow: var(--shadow-lg);
+  text-align: center;
+}
+
+.authLogo {
+  width: 68px;
+  height: 68px;
+  margin: 0 auto 14px;
+  display: grid;
+  place-items: center;
+  border-radius: 22px;
+  background: var(--grad-soft);
+  font-size: 34px;
+}
+
+.authCard h1 {
+  margin: 0;
+  font-size: 34px;
+  line-height: 1;
+  letter-spacing: -0.05em;
+}
+
+.authCard p {
+  margin: 12px 0 20px;
+  color: var(--muted);
+  font-size: 15px;
+  line-height: 1.45;
+  font-weight: 600;
+}
+
+.authMessage {
+  min-height: 22px;
+  margin-bottom: 0 !important;
+  color: var(--purple-2) !important;
+  font-size: 13px !important;
+}
+
+.topActions {
+  flex-shrink: 0;
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.syncStatus,
+.userLabel {
+  max-width: 112px;
+  padding: 7px 9px;
+  border-radius: 999px;
+  background: rgba(255, 255, 255, 0.7);
+  border: 1px solid var(--border);
+  color: var(--muted);
+  font-size: 10px;
+  line-height: 1;
+  font-weight: 700;
+  white-space: nowrap;
+  overflow: hidden;
+  text-overflow: ellipsis;
+}
+
+.userLabel {
+  display: none;
+}
+
+@media (min-width: 560px) {
+  .userLabel:not([hidden]) {
+    display: inline-block;
+  }
+}
+
+@media (max-width: 380px) {
+  .syncStatus {
+    display: none;
+  }
+}
