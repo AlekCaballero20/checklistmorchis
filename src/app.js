@@ -1,23 +1,53 @@
-'use strict';
+import { initializeApp } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-app.js';
+import {
+  getAuth,
+  GoogleAuthProvider,
+  onAuthStateChanged,
+  signInWithPopup,
+  signOut
+} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
+import {
+  doc,
+  getFirestore,
+  onSnapshot,
+  serverTimestamp,
+  setDoc
+} from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
 
 /* =============================================================================
    Maleta · app.js
-   Un solo archivo, sin frameworks, sin módulos fantasma, sin drama innecesario.
-   - Estado plano en memoria + localStorage
-   - Render simple
-   - Import / export robusto
-   - Validación y saneamiento de datos
-   - Backup automático antes de importar
+   Estado compartido en Firebase Auth + Firestore.
+   - Solo Alek y Cata pueden entrar.
+   - Ya no se guarda estado en localStorage.
+   - Render simple + import/export JSON + validación de datos.
 ============================================================================= */
 
 /* ────────────────────────────────────────────────────────────────────────────
    CONSTANTES
 ──────────────────────────────────────────────────────────────────────────── */
-const STORAGE_KEY = 'maleta_v1';
-const IMPORT_BACKUP_KEY = 'maleta_backup_before_import_v1';
 const BACKUP_VERSION = 1;
 const APP_ID = 'maleta-checklist';
 const SCHEMA_ID = 'simple-flat-v1';
+const ALLOWED_EMAILS = [
+  'alekcaballeromusic@gmail.com',
+  'catalina.medina.leal@gmail.com'
+];
+
+const firebaseConfig = {
+  apiKey: 'AIzaSyAdB0rGcyjFE2_BCGoeoH2oRtYVC1kTvjY',
+  authDomain: 'checklist-maleta.firebaseapp.com',
+  projectId: 'checklist-maleta',
+  storageBucket: 'checklist-maleta.firebasestorage.app',
+  messagingSenderId: '266347823720',
+  appId: '1:266347823720:web:44fe1b5762515f292731dd'
+};
+
+const firebaseApp = initializeApp(firebaseConfig);
+const auth = getAuth(firebaseApp);
+const provider = new GoogleAuthProvider();
+provider.setCustomParameters({ prompt: 'select_account' });
+const db = getFirestore(firebaseApp);
+const sharedStateRef = doc(db, 'apps', APP_ID);
 
 /* ────────────────────────────────────────────────────────────────────────────
    HELPERS
@@ -338,41 +368,209 @@ function mergeStates(currentState, importedState) {
 }
 
 /* ────────────────────────────────────────────────────────────────────────────
-   STORAGE
+   FIREBASE / ESTADO REMOTO
 ──────────────────────────────────────────────────────────────────────────── */
-function loadState() {
-  try {
-    const raw = localStorage.getItem(STORAGE_KEY);
-    if (!raw) return defaultState();
+let state = defaultState();
+let duplicateItemId = '';
+let currentUser = null;
+let unsubscribeRemoteState = null;
+let initialRemoteLoaded = false;
+let lastSavedAt = '';
 
-    const parsed = JSON.parse(raw);
-    return sanitizeState(parsed).state;
-  } catch {
-    return defaultState();
-  }
+function isAllowedEmail(email) {
+  return ALLOWED_EMAILS.includes(safeString(email).trim().toLowerCase());
 }
 
-let state = loadState();
-let duplicateItemId = '';
+function setAuthMessage(message) {
+  const el = $('authMessage');
+  if (el) el.textContent = message || '';
+}
 
-function save() {
+function setSyncStatus(message) {
+  const el = $('syncStatus');
+  if (el) el.textContent = message || '';
+}
+
+function setCurrentUserLabel(user) {
+  const el = $('currentUserLabel');
+  if (!el) return;
+
+  if (!user?.email) {
+    el.textContent = '';
+    el.hidden = true;
+    return;
+  }
+
+  el.textContent = user.email;
+  el.hidden = false;
+}
+
+function showAuthGate(message = '') {
+  const app = $('app');
+  const gate = $('authGate');
+
+  if (app) app.hidden = true;
+  if (gate) gate.hidden = false;
+
+  setAuthMessage(message);
+  setSyncStatus('');
+  setCurrentUserLabel(null);
+}
+
+function showAppShell() {
+  const app = $('app');
+  const gate = $('authGate');
+
+  if (gate) gate.hidden = true;
+  if (app) app.hidden = false;
+}
+
+function createRemotePayload(rawState) {
+  const cleanState = sanitizeState(rawState).state;
+
+  return {
+    app: APP_ID,
+    schema: SCHEMA_ID,
+    backupVersion: BACKUP_VERSION,
+    updatedAt: serverTimestamp(),
+    updatedAtClient: nowIso(),
+    updatedBy: currentUser?.email || '',
+    data: cleanState
+  };
+}
+
+function readRemoteState(snapshotData) {
+  const payload = snapshotData?.data || snapshotData?.state || snapshotData;
+  return sanitizeState(payload).state;
+}
+
+async function save() {
+  if (!currentUser || !isAllowedEmail(currentUser.email)) {
+    showToast('Inicia sesión con una cuenta autorizada');
+    return false;
+  }
+
   try {
-    localStorage.setItem(STORAGE_KEY, JSON.stringify(sanitizeState(state).state));
-  } catch {
-    // Silencio práctico. Si falla quota, la app sigue viva.
+    state = sanitizeState(state).state;
+    setSyncStatus('Guardando…');
+
+    await setDoc(sharedStateRef, createRemotePayload(state));
+
+    lastSavedAt = new Date().toLocaleTimeString('es-CO', {
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+    setSyncStatus(`Guardado ${lastSavedAt}`);
+    return true;
+  } catch (error) {
+    console.error(error);
+    setSyncStatus('Error al guardar');
+    showToast('No se pudo guardar en Firebase');
+    return false;
   }
 }
 
 function backupCurrentStateBeforeImport() {
-  try {
-    const envelope = createBackupEnvelope(state, {
-      reason: 'before-import',
-      backupCreatedAt: nowIso()
-    });
-    localStorage.setItem(IMPORT_BACKUP_KEY, JSON.stringify(envelope));
-  } catch {
-    // Si no cabe o falla, no rompemos el flujo.
+  const envelope = createBackupEnvelope(state, {
+    reason: 'before-import',
+    backupCreatedAt: nowIso(),
+    source: 'firestore'
+  });
+  const filename = `maleta-backup-antes-de-importar-${formatBackupFileDate()}.json`;
+  downloadTextFile(filename, JSON.stringify(envelope, null, 2));
+}
+
+function stopRemoteSync() {
+  if (typeof unsubscribeRemoteState === 'function') {
+    unsubscribeRemoteState();
+    unsubscribeRemoteState = null;
   }
+}
+
+function startRemoteSync() {
+  stopRemoteSync();
+  initialRemoteLoaded = false;
+  setSyncStatus('Cargando…');
+
+  unsubscribeRemoteState = onSnapshot(
+    sharedStateRef,
+    async snapshot => {
+      try {
+        if (!snapshot.exists()) {
+          state = defaultState();
+          await setDoc(sharedStateRef, createRemotePayload(state));
+        } else {
+          state = readRemoteState(snapshot.data());
+        }
+
+        initialRemoteLoaded = true;
+        showAppShell();
+        render();
+
+        if (snapshot.metadata.hasPendingWrites) {
+          setSyncStatus('Guardando…');
+        } else {
+          const suffix = lastSavedAt ? ` ${lastSavedAt}` : '';
+          setSyncStatus(`Sincronizado${suffix}`);
+        }
+      } catch (error) {
+        console.error(error);
+        setSyncStatus('Error al cargar');
+        showToast('No se pudo cargar la información');
+      }
+    },
+    error => {
+      console.error(error);
+      initialRemoteLoaded = false;
+      setSyncStatus('Sin acceso');
+      showAuthGate('No se pudo leer Firestore. Revisa que las reglas estén publicadas y que uses una cuenta autorizada.');
+    }
+  );
+}
+
+async function loginWithGoogle() {
+  try {
+    setAuthMessage('Abriendo Google…');
+    await signInWithPopup(auth, provider);
+  } catch (error) {
+    console.error(error);
+    setAuthMessage('No se pudo iniciar sesión. Revisa ventanas emergentes o intenta de nuevo.');
+  }
+}
+
+async function logout() {
+  stopRemoteSync();
+  currentUser = null;
+  initialRemoteLoaded = false;
+  await signOut(auth);
+}
+
+function initAuth() {
+  showAuthGate('Inicia sesión con una cuenta autorizada.');
+
+  onAuthStateChanged(auth, async user => {
+    stopRemoteSync();
+
+    if (!user) {
+      currentUser = null;
+      initialRemoteLoaded = false;
+      showAuthGate('Inicia sesión con una cuenta autorizada.');
+      return;
+    }
+
+    if (!isAllowedEmail(user.email)) {
+      currentUser = null;
+      initialRemoteLoaded = false;
+      showAuthGate(`La cuenta ${user.email || ''} no tiene acceso.`);
+      await signOut(auth);
+      return;
+    }
+
+    currentUser = user;
+    setCurrentUserLabel(user);
+    showAppShell();
+    startRemoteSync();
+  });
 }
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -390,7 +588,7 @@ function createBackupEnvelope(rawState, extraMeta = {}) {
     meta: {
       listsCount: summary.lists,
       itemsCount: summary.items,
-      storageKey: STORAGE_KEY,
+      source: 'firestore',
       ...extraMeta
     },
     data: cleanState
@@ -1191,18 +1389,14 @@ function bindEvents() {
     if (input) input.value = '';
   });
 
+  // Sesión
+  on('btnLoginGoogle', 'click', loginWithGoogle);
+  on('btnLogout', 'click', logout);
+
   // Escape global
   document.addEventListener('keydown', event => {
     if (event.key !== 'Escape') return;
     closeAllModals();
-  });
-
-  // Sincronización entre pestañas
-  window.addEventListener('storage', event => {
-    if (event.key !== STORAGE_KEY) return;
-
-    state = loadState();
-    render();
   });
 }
 
@@ -1211,7 +1405,7 @@ function bindEvents() {
 ──────────────────────────────────────────────────────────────────────────── */
 function init() {
   bindEvents();
-  render();
+  initAuth();
 }
 
 init();
