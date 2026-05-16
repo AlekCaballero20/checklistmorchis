@@ -10,7 +10,7 @@
   <title>Maleta · Checklist</title>
   <meta
     name="description"
-    content="Checklist rápido, offline y fácil de usar para organizar tus listas e ítems."
+    content="Checklist rápido con guardado en Firebase para organizar tus listas e ítems."
   />
   <meta name="theme-color" content="#7c5cff" />
   <meta name="mobile-web-app-capable" content="yes" />
@@ -38,26 +38,53 @@
     </div>
   </noscript>
 
-  <div id="app">
+  <div id="authGate" class="authGate" role="main" aria-labelledby="authTitle">
+    <div class="authCard">
+      <div class="authLogo" aria-hidden="true">🧳</div>
+      <h1 id="authTitle">Maleta</h1>
+      <p>
+        Checklist compartido con guardado en Firebase. Solo pueden entrar las cuentas autorizadas de Alek y Cata.
+      </p>
+      <button id="btnLoginGoogle" class="btn primary full" type="button">
+        Entrar con Google
+      </button>
+      <p id="authMessage" class="authMessage" role="status" aria-live="polite"></p>
+    </div>
+  </div>
+
+  <div id="app" hidden>
     <!-- Topbar -->
     <header class="topbar" role="banner">
       <div class="brand" aria-label="Marca de la aplicación">
         <div class="logoDot" aria-hidden="true"></div>
         <div class="brandText">
           <h1 class="brandTitle">Maleta</h1>
-          <p class="brandSub">Checklist rápido (offline)</p>
+          <p class="brandSub">Guardado en Firebase</p>
         </div>
       </div>
 
-      <button
-        id="btnSettings"
-        class="iconBtn"
-        type="button"
-        aria-label="Administrar listas"
-        title="Mis listas"
-      >
-        ⚙️
-      </button>
+      <div class="topActions">
+        <span id="syncStatus" class="syncStatus" aria-live="polite">Cargando…</span>
+        <span id="currentUserLabel" class="userLabel" hidden></span>
+        <button
+          id="btnLogout"
+          class="iconBtn"
+          type="button"
+          aria-label="Cerrar sesión"
+          title="Cerrar sesión"
+        >
+          ⎋
+        </button>
+        <button
+          id="btnSettings"
+          class="iconBtn"
+          type="button"
+          aria-label="Administrar listas"
+          title="Mis listas"
+        >
+          ⚙️
+        </button>
+      </div>
     </header>
 
     <main class="pageMain" role="main">
@@ -274,7 +301,7 @@
 
       <div class="modalBody">
         <p id="listsDescription" class="modalHelp">
-          Administra tus listas y deja preparada la app para respaldar tu información.
+Administra tus listas. Todo queda sincronizado en Firebase para las cuentas autorizadas.
         </p>
 
         <div id="listsList" class="listsList" aria-label="Listas guardadas"></div>
@@ -326,8 +353,7 @@
           <p id="backupTitle" class="sectionLabel">Respaldo de datos</p>
           <p class="modalHelp">
             Exporta tus listas e ítems a un archivo JSON o importa un respaldo cuando
-            actualices la app. Porque perder datos por una actualización boba ya sería
-            muy de la especie.
+            necesites mover información. Firebase guarda el día a día; el JSON queda como plan B, porque confiar ciegamente en una sola nube también es una tradición humana peligrosa.
           </p>
 
           <div class="heroQuick backupActions">
@@ -363,7 +389,7 @@
     </div>
   </div>
 
-  <script src="./src/app.js"></script>
+  <script type="module" src="./src/app.js"></script>
   <script>
     if ("serviceWorker" in navigator) {
       window.addEventListener("load", () => {

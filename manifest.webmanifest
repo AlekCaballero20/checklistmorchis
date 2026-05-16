@@ -1,7 +1,7 @@
 {
   "name": "Maleta · Checklist",
   "short_name": "Maleta",
-  "description": "Checklist rápido y offline",
+  "description": "Checklist rápido con guardado en Firebase",
   "start_url": "./",
   "display": "standalone",
   "background_color": "#ece8ff",
