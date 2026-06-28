@@ -497,6 +497,47 @@ body {
     box-shadow 0.16s ease;
 }
 
+.itemDragHandle {
+  width: 30px;
+  min-width: 30px;
+  align-self: stretch;
+  border: 0;
+  background: transparent;
+  color: #aaa1bd;
+  display: grid;
+  place-items: center;
+  font-size: 17px;
+  line-height: 1;
+  cursor: grab;
+  touch-action: none;
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.itemDragHandle:active {
+  cursor: grabbing;
+}
+
+.list.isReordering {
+  user-select: none;
+  -webkit-user-select: none;
+}
+
+.item.isDragging {
+  position: relative;
+  z-index: 5;
+  opacity: 0.86;
+  border-color: var(--purple);
+  background: #f7f4ff;
+  box-shadow: 0 14px 30px rgba(88, 62, 170, 0.22);
+  transform: scale(1.02);
+}
+
+.item.isDragging .itemDragHandle {
+  color: var(--purple);
+  cursor: grabbing;
+}
+
 .item.isDone {
   opacity: 0.58;
 }

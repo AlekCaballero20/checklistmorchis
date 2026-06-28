@@ -805,6 +805,22 @@ function deleteItem(id) {
   return true;
 }
 
+function reorderActiveItems(orderedIds) {
+  const activeIds = new Set(getActiveItems().map(item => item.id));
+  const orderedActiveItems = orderedIds
+    .map(id => state.items.find(item => item.id === id))
+    .filter(item => item && activeIds.has(item.id));
+
+  if (orderedActiveItems.length !== activeIds.size) return false;
+
+  let activeIndex = 0;
+  state.items = state.items.map(item =>
+    activeIds.has(item.id) ? orderedActiveItems[activeIndex++] : item
+  );
+  save();
+  return true;
+}
+
 function resetItems() {
   const items = getActiveItems();
   items.forEach(item => {
@@ -883,13 +899,17 @@ function renderItems() {
     return;
   }
 
-  const sorted = [
-    ...items.filter(item => !item.done),
-    ...items.filter(item => item.done)
-  ];
-
-  container.innerHTML = sorted.map(item => `
+  container.innerHTML = items.map(item => `
     <div class="item${item.done ? ' isDone' : ''}" data-id="${esc(item.id)}">
+      <button
+        class="itemDragHandle"
+        type="button"
+        aria-label="Mantén presionado para cambiar el orden"
+        title="Mantén presionado y arrastra"
+      >
+        <span aria-hidden="true">⋮⋮</span>
+      </button>
+
       <button
         class="itemToggle"
         type="button"
@@ -1202,6 +1222,83 @@ function doDuplicateItem() {
    EVENTOS
 ──────────────────────────────────────────────────────────────────────────── */
 function bindEvents() {
+  const list = $('list');
+  let drag = null;
+
+  function clearDragTimer() {
+    if (!drag?.timer) return;
+    clearTimeout(drag.timer);
+    drag.timer = null;
+  }
+
+  function finishDrag(event, cancelled = false) {
+    if (!drag || event.pointerId !== drag.pointerId) return;
+    clearDragTimer();
+
+    if (drag.active) {
+      drag.item.classList.remove('isDragging');
+      list?.classList.remove('isReordering');
+      drag.handle.releasePointerCapture?.(event.pointerId);
+
+      if (cancelled) {
+        renderItems();
+      } else {
+        const orderedIds = [...list.querySelectorAll('.item')].map(item => item.dataset.id);
+        if (reorderActiveItems(orderedIds)) showToast('Orden guardado');
+      }
+    }
+
+    drag = null;
+  }
+
+  list?.addEventListener('pointerdown', event => {
+    const handle = event.target.closest('.itemDragHandle');
+    const item = handle?.closest('.item');
+    if (!handle || !item || event.button > 0) return;
+
+    drag = {
+      pointerId: event.pointerId,
+      handle,
+      item,
+      startX: event.clientX,
+      startY: event.clientY,
+      active: false,
+      timer: setTimeout(() => {
+        if (!drag || drag.pointerId !== event.pointerId) return;
+        drag.active = true;
+        handle.setPointerCapture?.(event.pointerId);
+        item.classList.add('isDragging');
+        list.classList.add('isReordering');
+        navigator.vibrate?.(25);
+      }, 320)
+    };
+  });
+
+  list?.addEventListener('pointermove', event => {
+    if (!drag || event.pointerId !== drag.pointerId) return;
+
+    if (!drag.active) {
+      if (Math.hypot(event.clientX - drag.startX, event.clientY - drag.startY) > 8) {
+        clearDragTimer();
+        drag = null;
+      }
+      return;
+    }
+
+    event.preventDefault();
+    const siblings = [...list.querySelectorAll('.item:not(.isDragging)')];
+    const next = siblings.find(item => {
+      const rect = item.getBoundingClientRect();
+      return event.clientY < rect.top + rect.height / 2;
+    });
+
+    if (next) list.insertBefore(drag.item, next);
+    else list.appendChild(drag.item);
+  });
+
+  list?.addEventListener('pointerup', event => finishDrag(event));
+  list?.addEventListener('pointercancel', event => finishDrag(event, true));
+
   // Delegación global
   document.addEventListener('click', event => {
     if (event.target.classList.contains('modalOverlay')) {
