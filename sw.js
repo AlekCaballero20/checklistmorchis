@@ -3,7 +3,7 @@
    Offline-ready, más estable y menos pegado a caché vieja
 ============================================================================= */
 
-const CACHE_NAME = 'maleta-firebase-v3';
+const CACHE_NAME = 'maleta-firebase-v4';
 
 const APP_SHELL = [
   './',

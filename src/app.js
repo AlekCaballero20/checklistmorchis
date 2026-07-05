@@ -787,6 +787,76 @@ function duplicateItemToList(itemId, targetListId) {
   return { ok: true, item: copy };
 }
 
+function copyListItems(sourceListId, targetListId, mode) {
+  const cleanSource = safeString(sourceListId).trim();
+  const cleanTarget = safeString(targetListId).trim();
+
+  if (!state.lists.find(list => list.id === cleanSource)) {
+    return { ok: false, reason: 'missing-source' };
+  }
+  if (!state.lists.find(list => list.id === cleanTarget)) {
+    return { ok: false, reason: 'missing-target' };
+  }
+  if (cleanSource === cleanTarget) {
+    return { ok: false, reason: 'same-list' };
+  }
+
+  const sourceItems = getListItems(cleanSource);
+  if (!sourceItems.length) {
+    return { ok: false, reason: 'empty-source' };
+  }
+
+  if (mode === 'replace') {
+    // Borra todo lo de la lista destino y copia esta tal cual, en orden.
+    state.items = state.items.filter(item => item.listId !== cleanTarget);
+
+    const copies = sourceItems.map(source => ({
+      id: uid(),
+      listId: cleanTarget,
+      text: source.text,
+      emoji: source.emoji,
+      done: false
+    }));
+
+    state.items.push(...copies);
+    save();
+    return { ok: true, added: copies.length, skipped: 0, mode };
+  }
+
+  // mode === 'skip': copia solo los que faltan, sin duplicar, en orden.
+  const existing = new Set(
+    getListItems(cleanTarget).map(item =>
+      `${normalizeText(item.text)}::${safeString(item.emoji).trim()}`
+    )
+  );
+
+  const copies = [];
+  let skipped = 0;
+
+  sourceItems.forEach(source => {
+    const fp = `${normalizeText(source.text)}::${safeString(source.emoji).trim()}`;
+    if (existing.has(fp)) {
+      skipped += 1;
+      return;
+    }
+    existing.add(fp);
+    copies.push({
+      id: uid(),
+      listId: cleanTarget,
+      text: source.text,
+      emoji: source.emoji,
+      done: false
+    });
+  });
+
+  if (copies.length) {
+    state.items.push(...copies);
+    save();
+  }
+
+  return { ok: true, added: copies.length, skipped, mode };
+}
+
 function toggleItem(id) {
   const item = state.items.find(entry => entry.id === id);
   if (!item) return false;
@@ -1036,7 +1106,7 @@ function openModal(id, returnEl) {
   const overlay = $(id);
   if (!overlay) return;
 
-  ['addOverlay', 'duplicateOverlay', 'listsOverlay'].forEach(otherId => {
+  ['addOverlay', 'duplicateOverlay', 'copyListOverlay', 'listsOverlay'].forEach(otherId => {
     if (otherId !== id) hideModalSilently(otherId);
   });
 
@@ -1070,7 +1140,7 @@ function closeModal(id) {
 }
 
 function closeAllModals() {
-  ['addOverlay', 'duplicateOverlay', 'listsOverlay'].forEach(hideModalSilently);
+  ['addOverlay', 'duplicateOverlay', 'copyListOverlay', 'listsOverlay'].forEach(hideModalSilently);
   syncBodyScrollLock();
 }
 
@@ -1125,6 +1195,31 @@ function openDuplicateModal(itemId, returnEl) {
   }
 
   openModal('duplicateOverlay', returnEl);
+}
+
+function openCopyListModal(returnEl) {
+  if (state.lists.length < 2) {
+    showToast('Crea otra lista para poder copiar');
+    return;
+  }
+
+  populateListSelect('copySourceList');
+  populateListSelect('copyTargetList');
+
+  const sourceSelect = $('copySourceList');
+  const targetSelect = $('copyTargetList');
+
+  if (sourceSelect) sourceSelect.value = state.activeListId;
+  if (targetSelect) {
+    targetSelect.value =
+      state.lists.find(list => list.id !== state.activeListId)?.id ||
+      state.activeListId;
+  }
+
+  const skip = $('copyModeSkip');
+  if (skip) skip.checked = true;
+
+  openModal('copyListOverlay', returnEl);
 }
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -1216,6 +1311,55 @@ function doDuplicateItem() {
   closeModal('duplicateOverlay');
   render();
   showToast('✅ Ítem duplicado');
+}
+
+function doCopyList() {
+  const sourceId = $('copySourceList')?.value || '';
+  const targetId = $('copyTargetList')?.value || '';
+  const mode =
+    document.querySelector('input[name="copyListMode"]:checked')?.value || 'skip';
+
+  if (sourceId === targetId) {
+    showToast('Elige listas diferentes');
+    return;
+  }
+
+  if (mode === 'replace') {
+    const targetList = state.lists.find(list => list.id === targetId);
+    const ok = confirm(
+      `Esto borrará todos los ítems de "${targetList?.name || 'la lista destino'}" ` +
+      'y los reemplazará por los de la lista origen. ¿Continuar?'
+    );
+    if (!ok) return;
+  }
+
+  const result = copyListItems(sourceId, targetId, mode);
+
+  if (!result.ok) {
+    if (result.reason === 'same-list') {
+      showToast('Elige listas diferentes');
+      return;
+    }
+    if (result.reason === 'empty-source') {
+      showToast('La lista origen no tiene ítems');
+      return;
+    }
+    showToast('No se pudo copiar la lista');
+    return;
+  }
+
+  closeModal('copyListOverlay');
+  render();
+
+  if (result.mode === 'replace') {
+    showToast(`✅ Lista reemplazada (${result.added} ítems)`);
+  } else if (result.added === 0) {
+    showToast('Nada que copiar: ya estaban todos');
+  } else if (result.skipped > 0) {
+    showToast(`✅ ${result.added} copiados, ${result.skipped} ya existían`);
+  } else {
+    showToast(`✅ ${result.added} ítems copiados`);
+  }
 }
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -1369,7 +1513,12 @@ function bindEvents() {
   // Cerrar modales
   on('btnCloseAdd', 'click', () => closeModal('addOverlay'));
   on('btnCloseDuplicate', 'click', () => closeModal('duplicateOverlay'));
+  on('btnCloseCopyList', 'click', () => closeModal('copyListOverlay'));
   on('btnCloseLists', 'click', () => closeModal('listsOverlay'));
+
+  // Copiar lista completa
+  on('btnOpenCopyList', 'click', () => openCopyListModal($('btnOpenCopyList')));
+  on('btnConfirmCopyList', 'click', doCopyList);
 
   // Crear ítem
   on('btnCreate', 'click', doAddItem);

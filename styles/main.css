@@ -1237,3 +1237,30 @@ body {
     display: none;
   }
 }
+
+/* Opciones de "Copiar lista completa" */
+.copyModeOption {
+  cursor: pointer;
+}
+
+.copyModeRow {
+  display: flex;
+  align-items: flex-start;
+  gap: 10px;
+}
+
+.copyModeRow input[type="radio"] {
+  margin-top: 3px;
+  flex: 0 0 auto;
+}
+
+.copyModeRow strong {
+  display: block;
+}
+
+.copyModeRow small {
+  display: block;
+  color: var(--muted);
+  font-size: 13px;
+  margin-top: 2px;
+}
