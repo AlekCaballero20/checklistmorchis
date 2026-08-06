@@ -1369,6 +1369,64 @@ function bindEvents() {
   const list = $('list');
   let drag = null;
 
+  function placeDraggedItem(clientY) {
+    if (!drag?.active || !list) return;
+
+    const siblings = [...list.querySelectorAll('.item:not(.isDragging)')];
+    const next = siblings.find(item => {
+      const rect = item.getBoundingClientRect();
+      return clientY < rect.top + rect.height / 2;
+    });
+
+    if (next) list.insertBefore(drag.item, next);
+    else list.appendChild(drag.item);
+  }
+
+  function stopDragAutoScroll() {
+    if (!drag?.scrollFrame) return;
+    cancelAnimationFrame(drag.scrollFrame);
+    drag.scrollFrame = null;
+  }
+
+  function updateDragAutoScroll() {
+    if (!drag?.active || !list) return;
+
+    const rect = list.getBoundingClientRect();
+    const edgeSize = Math.min(84, rect.height / 3);
+    const topDistance = drag.lastY - rect.top;
+    const bottomDistance = rect.bottom - drag.lastY;
+    let direction = 0;
+    let intensity = 0;
+
+    if (topDistance < edgeSize) {
+      direction = -1;
+      intensity = 1 - Math.max(topDistance, 0) / edgeSize;
+    } else if (bottomDistance < edgeSize) {
+      direction = 1;
+      intensity = 1 - Math.max(bottomDistance, 0) / edgeSize;
+    }
+
+    if (!direction) {
+      stopDragAutoScroll();
+      return;
+    }
+
+    const previousScrollTop = list.scrollTop;
+    list.scrollTop += direction * (4 + intensity * 16);
+    placeDraggedItem(drag.lastY);
+
+    if (list.scrollTop !== previousScrollTop) {
+      drag.scrollFrame = requestAnimationFrame(updateDragAutoScroll);
+    } else {
+      drag.scrollFrame = null;
+    }
+  }
+
+  function syncDragAutoScroll() {
+    stopDragAutoScroll();
+    updateDragAutoScroll();
+  }
+
   function clearDragTimer() {
     if (!drag?.timer) return;
     clearTimeout(drag.timer);
@@ -1378,6 +1436,7 @@ function bindEvents() {
   function finishDrag(event, cancelled = false) {
     if (!drag || event.pointerId !== drag.pointerId) return;
     clearDragTimer();
+    stopDragAutoScroll();
 
     if (drag.active) {
       drag.item.classList.remove('isDragging');
@@ -1406,6 +1465,7 @@ function bindEvents() {
       item,
       startX: event.clientX,
       startY: event.clientY,
+      lastY: event.clientY,
       active: false,
       timer: setTimeout(() => {
         if (!drag || drag.pointerId !== event.pointerId) return;
@@ -1430,14 +1490,9 @@ function bindEvents() {
     }
 
     event.preventDefault();
-    const siblings = [...list.querySelectorAll('.item:not(.isDragging)')];
-    const next = siblings.find(item => {
-      const rect = item.getBoundingClientRect();
-      return event.clientY < rect.top + rect.height / 2;
-    });
-
-    if (next) list.insertBefore(drag.item, next);
-    else list.appendChild(drag.item);
+    drag.lastY = event.clientY;
+    placeDraggedItem(drag.lastY);
+    syncDragAutoScroll();
   });
 
   list?.addEventListener('pointerup', event => finishDrag(event));
