@@ -3,12 +3,16 @@
    Offline-ready, más estable y menos pegado a caché vieja
 ============================================================================= */
 
-const CACHE_NAME = 'maleta-firebase-v4';
+/* Subir esta versión en CADA cambio de los archivos del shell.
+   Si no se sube, cleanOldCaches() no borra nada y los usuarios siguen
+   viendo la versión anterior indefinidamente. */
+const CACHE_NAME = 'maleta-firebase-v5';
 
 const APP_SHELL = [
   './',
   './index.html',
   './src/app.js',
+  './src/state.core.js',
   './styles/main.css',
   './manifest.webmanifest',
   './icons/icon-192.png',
