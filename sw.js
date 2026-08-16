@@ -6,7 +6,7 @@
 /* Subir esta versión en CADA cambio de los archivos del shell.
    Si no se sube, cleanOldCaches() no borra nada y los usuarios siguen
    viendo la versión anterior indefinidamente. */
-const CACHE_NAME = 'maleta-firebase-v5';
+const CACHE_NAME = 'maleta-firebase-v6';
 
 const APP_SHELL = [
   './',
@@ -44,7 +44,12 @@ function shouldCacheResponse(response) {
 
 async function cacheAppShell() {
   const cache = await caches.open(CACHE_NAME);
-  await cache.addAll(APP_SHELL);
+
+  // cache: 'reload' evita la caché HTTP del navegador al poblar el shell.
+  // Sin esto, un SW nuevo puede guardar archivos viejos que el navegador
+  // ya tenía y dejar versiones mezcladas (p.ej. app.js viejo con un
+  // módulo nuevo), que es más difícil de detectar que un fallo limpio.
+  await cache.addAll(APP_SHELL.map(url => new Request(url, { cache: 'reload' })));
 }
 
 async function cleanOldCaches() {
