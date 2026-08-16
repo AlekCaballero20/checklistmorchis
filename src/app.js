@@ -8,11 +8,27 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-auth.js';
 import {
   doc,
-  getFirestore,
+  initializeFirestore,
   onSnapshot,
+  persistentLocalCache,
+  persistentMultipleTabManager,
+  runTransaction,
   serverTimestamp,
   setDoc
 } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
+
+import {
+  deepClone,
+  defaultState,
+  mergeStates,
+  normalizeText,
+  nowIso,
+  safeString,
+  sanitizeState,
+  summarizeState,
+  truncateChars,
+  uid
+} from './state.core.js';
 
 /* =============================================================================
    Maleta · app.js
@@ -28,6 +44,18 @@ import {
 const BACKUP_VERSION = 1;
 const APP_ID = 'maleta-checklist';
 const SCHEMA_ID = 'simple-flat-v1';
+
+/* Red de seguridad contra pérdida de datos.
+   Contexto: una versión anterior sobrescribía el documento con un estado
+   vacío cuando la lectura devolvía "no existe". Estas tres capas evitan
+   que un fallo transitorio vuelva a ser una pérdida permanente. */
+const VERSIONS_COLLECTION = 'versiones'; // historial en Firestore
+const LOCAL_BACKUP_KEY = 'maleta_local_backups_v1';
+const LOCAL_BACKUP_LIMIT = 20;           // copias locales que conservamos
+
+const SAVE_DEBOUNCE_MS = 1500;           // agrupa ráfagas de cambios
+const VERSION_MIN_INTERVAL_MS = 5 * 60 * 1000; // 5 min entre versiones
+const VERSION_TTL_DAYS = 90;             // el historial se borra solo
 const ALLOWED_EMAILS = [
   'alekcaballeromusic@gmail.com',
   'catalina.medina.leal@gmail.com'
@@ -46,7 +74,14 @@ const firebaseApp = initializeApp(firebaseConfig);
 const auth = getAuth(firebaseApp);
 const provider = new GoogleAuthProvider();
 provider.setCustomParameters({ prompt: 'select_account' });
-const db = getFirestore(firebaseApp);
+/* Persistencia offline.
+   Sin esto la app abría sin señal pero no mostraba ni guardaba nada — justo
+   cuando más se necesita (en la moto, entre casas). Además deja una copia
+   local real de los datos en IndexedDB.
+   persistentMultipleTabManager permite tener varias pestañas abiertas. */
+const db = initializeFirestore(firebaseApp, {
+  localCache: persistentLocalCache({ tabManager: persistentMultipleTabManager() })
+});
 const sharedStateRef = doc(db, 'apps', APP_ID);
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -59,45 +94,12 @@ function on(id, event, handler) {
   if (el) el.addEventListener(event, handler);
 }
 
-function uid() {
-  if (window.crypto?.randomUUID) {
-    return `id_${window.crypto.randomUUID().replace(/-/g, '').slice(0, 16)}`;
-  }
-  return `id_${Math.random().toString(36).slice(2, 9)}${Date.now().toString(36)}`;
-}
-
 function esc(value) {
   return String(value)
     .replace(/&/g, '&amp;')
     .replace(/</g, '&lt;')
     .replace(/>/g, '&gt;')
     .replace(/"/g, '&quot;');
-}
-
-function safeString(value) {
-  if (typeof value === 'string') return value;
-  if (value == null) return '';
-  return String(value);
-}
-
-function safeBool(value) {
-  return value === true || value === 'true' || value === 1 || value === '1';
-}
-
-function deepClone(value) {
-  return JSON.parse(JSON.stringify(value));
-}
-
-function nowIso() {
-  return new Date().toISOString();
-}
-
-function truncateChars(value, maxChars) {
-  return Array.from(safeString(value)).slice(0, maxChars).join('');
-}
-
-function normalizeText(value) {
-  return safeString(value).trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
 function formatBackupFileDate(date = new Date()) {
@@ -139,234 +141,7 @@ function downloadTextFile(filename, content, mime = 'application/json;charset=ut
   setTimeout(() => URL.revokeObjectURL(url), 1500);
 }
 
-function itemFingerprint(item) {
-  return [
-    safeString(item.listId).trim(),
-    normalizeText(item.text),
-    safeString(item.emoji).trim()
-  ].join('::');
-}
-
-function summarizeState(s) {
-  return {
-    lists: Array.isArray(s?.lists) ? s.lists.length : 0,
-    items: Array.isArray(s?.items) ? s.items.length : 0
-  };
-}
-
-/* ────────────────────────────────────────────────────────────────────────────
-   ESTADO BASE
-──────────────────────────────────────────────────────────────────────────── */
-function defaultState() {
-  const id = uid();
-  return {
-    lists: [{ id, name: 'Mi lista', icon: '🧾' }],
-    items: [],
-    activeListId: id
-  };
-}
-
-/* ────────────────────────────────────────────────────────────────────────────
-   NORMALIZACIÓN Y SANEAMIENTO
-──────────────────────────────────────────────────────────────────────────── */
-function extractFlatStatePayload(input) {
-  if (!input || typeof input !== 'object' || Array.isArray(input)) return null;
-
-  const envelopeData =
-    input &&
-    typeof input === 'object' &&
-    input.data &&
-    typeof input.data === 'object' &&
-    !Array.isArray(input.data)
-      ? input.data
-      : null;
-
-  const source = envelopeData || input;
-
-  // Formato actual plano
-  if (Array.isArray(source.lists) && Array.isArray(source.items)) {
-    return {
-      lists: source.lists,
-      items: source.items,
-      activeListId: source.activeListId || source.currentListId || ''
-    };
-  }
-
-  // Posible formato futuro/modular -> convertir a plano
-  if (Array.isArray(source.lists) && source.itemsByListId && typeof source.itemsByListId === 'object') {
-    const flatItems = [];
-
-    Object.entries(source.itemsByListId).forEach(([listId, items]) => {
-      if (!Array.isArray(items)) return;
-
-      items.forEach(item => {
-        flatItems.push({
-          ...item,
-          listId: safeString(item?.listId).trim() || listId
-        });
-      });
-    });
-
-    return {
-      lists: source.lists,
-      items: flatItems,
-      activeListId: source.currentListId || source.activeListId || ''
-    };
-  }
-
-  return null;
-}
-
-function sanitizeList(rawList, usedIds) {
-  const name = truncateChars(safeString(rawList?.name).trim(), 40);
-  if (!name) return null;
-
-  let id = safeString(rawList?.id).trim();
-  if (!id || usedIds.has(id)) id = uid();
-  usedIds.add(id);
-
-  const icon = truncateChars(safeString(rawList?.icon).trim(), 8) || '🧾';
-
-  return { id, name, icon };
-}
-
-function sanitizeItem(rawItem, validListIds, usedIds) {
-  const text = truncateChars(safeString(rawItem?.text).trim(), 80);
-  if (!text) return null;
-
-  let listId = safeString(rawItem?.listId).trim();
-  if (!validListIds.has(listId)) return null;
-
-  let id = safeString(rawItem?.id).trim();
-  if (!id || usedIds.has(id)) id = uid();
-  usedIds.add(id);
-
-  const emoji = truncateChars(safeString(rawItem?.emoji).trim(), 8);
-  const done = safeBool(rawItem?.done);
-
-  return { id, listId, text, emoji, done };
-}
-
-function sanitizeState(input) {
-  const extracted = extractFlatStatePayload(input);
-  const fallback = defaultState();
-
-  if (!extracted) {
-    return {
-      ok: false,
-      state: fallback,
-      report: {
-        listsKept: 1,
-        itemsKept: 0,
-        listsDropped: 0,
-        itemsDropped: 0,
-        repaired: true
-      },
-      error: 'Formato no reconocido.'
-    };
-  }
-
-  const rawLists = Array.isArray(extracted.lists) ? extracted.lists : [];
-  const listIds = new Set();
-  const lists = [];
-  let listsDropped = 0;
-
-  rawLists.forEach(rawList => {
-    const clean = sanitizeList(rawList, listIds);
-    if (clean) lists.push(clean);
-    else listsDropped += 1;
-  });
-
-  if (!lists.length) {
-    const fallbackList = defaultState().lists[0];
-    lists.push(fallbackList);
-    listIds.add(fallbackList.id);
-  }
-
-  const rawItems = Array.isArray(extracted.items) ? extracted.items : [];
-  const itemIds = new Set();
-  const items = [];
-  let itemsDropped = 0;
-
-  rawItems.forEach(rawItem => {
-    const clean = sanitizeItem(rawItem, listIds, itemIds);
-    if (clean) items.push(clean);
-    else itemsDropped += 1;
-  });
-
-  let activeListId = safeString(extracted.activeListId).trim();
-  if (!listIds.has(activeListId)) activeListId = lists[0].id;
-
-  return {
-    ok: true,
-    state: { lists, items, activeListId },
-    report: {
-      listsKept: lists.length,
-      itemsKept: items.length,
-      listsDropped,
-      itemsDropped,
-      repaired: listsDropped > 0 || itemsDropped > 0
-    }
-  };
-}
-
-function mergeStates(currentState, importedState) {
-  const current = sanitizeState(currentState).state;
-  const incoming = sanitizeState(importedState).state;
-
-  const result = deepClone(current);
-
-  const listById = new Map(result.lists.map(list => [list.id, list]));
-  const itemById = new Map(result.items.map(item => [item.id, item]));
-  const itemByFingerprint = new Map(result.items.map(item => [itemFingerprint(item), item]));
-
-  // Listas: merge conservador por id
-  incoming.lists.forEach(list => {
-    if (listById.has(list.id)) return;
-
-    const next = deepClone(list);
-    result.lists.push(next);
-    listById.set(next.id, next);
-  });
-
-  // Ítems: merge por id, y si no, detectar posible duplicado por huella
-  incoming.items.forEach(item => {
-    if (!listById.has(item.listId)) return;
-
-    const existingById = itemById.get(item.id);
-    if (existingById) {
-      existingById.done = Boolean(existingById.done || item.done);
-      if (!existingById.emoji && item.emoji) existingById.emoji = item.emoji;
-      if (!existingById.text && item.text) existingById.text = item.text;
-      return;
-    }
-
-    const fp = itemFingerprint(item);
-    const existingByFingerprint = itemByFingerprint.get(fp);
-
-    if (existingByFingerprint) {
-      existingByFingerprint.done = Boolean(existingByFingerprint.done || item.done);
-      if (!existingByFingerprint.emoji && item.emoji) {
-        existingByFingerprint.emoji = item.emoji;
-      }
-      return;
-    }
-
-    const next = deepClone(item);
-    result.items.push(next);
-    itemById.set(next.id, next);
-    itemByFingerprint.set(fp, next);
-  });
-
-  if (!listById.has(result.activeListId)) {
-    result.activeListId = listById.has(incoming.activeListId)
-      ? incoming.activeListId
-      : result.lists[0]?.id || defaultState().activeListId;
-  }
-
-  return sanitizeState(result).state;
-}
-
+/* La lógica pura de datos vive en state.core.js (ver import arriba). */
 /* ────────────────────────────────────────────────────────────────────────────
    FIREBASE / ESTADO REMOTO
 ──────────────────────────────────────────────────────────────────────────── */
@@ -376,6 +151,20 @@ let currentUser = null;
 let unsubscribeRemoteState = null;
 let initialRemoteLoaded = false;
 let lastSavedAt = '';
+// Último estado que Firestore nos confirmó. Sirve para detectar si una
+// escritura va a destruir contenido que existía hace un momento.
+let lastConfirmedRemoteState = null;
+
+// Control de escrituras agrupadas (debounce).
+let saveTimer = null;
+let pendingSaveResolvers = [];
+
+// Control del historial de versiones.
+let lastVersionWriteAt = 0;
+let lastVersionState = null;
+
+// Revisión conocida del documento, para detectar edición concurrente.
+let knownRevision = 0;
 
 function isAllowedEmail(email) {
   return ALLOWED_EMAILS.includes(safeString(email).trim().toLowerCase());
@@ -444,7 +233,138 @@ function readRemoteState(snapshotData) {
   return sanitizeState(payload).state;
 }
 
-async function save() {
+/* ────────────────────────────────────────────────────────────────────────────
+   RED DE SEGURIDAD
+──────────────────────────────────────────────────────────────────────────── */
+
+/* Capa 1 — Copias locales.
+   Guardamos en el navegador cada estado que Firestore confirma. Es la
+   escotilla de escape: si el documento remoto se daña, acá queda rastro. */
+function pushLocalBackup(rawState, reason) {
+  try {
+    const envelope = createBackupEnvelope(rawState, { reason, source: 'auto-local' });
+    const prev = JSON.parse(localStorage.getItem(LOCAL_BACKUP_KEY) || '[]');
+    const list = Array.isArray(prev) ? prev : [];
+
+    // Evitamos duplicar si el contenido no cambió respecto de la última copia.
+    const fingerprint = JSON.stringify(envelope.data);
+    if (list.length && JSON.stringify(list[0]?.data) === fingerprint) return;
+
+    list.unshift(envelope);
+    localStorage.setItem(LOCAL_BACKUP_KEY, JSON.stringify(list.slice(0, LOCAL_BACKUP_LIMIT)));
+  } catch (error) {
+    // Nunca dejamos que un fallo de respaldo rompa el flujo principal.
+    console.warn('No se pudo guardar el respaldo local:', error);
+  }
+}
+
+function readLocalBackups() {
+  try {
+    const list = JSON.parse(localStorage.getItem(LOCAL_BACKUP_KEY) || '[]');
+    return Array.isArray(list) ? list : [];
+  } catch {
+    return [];
+  }
+}
+
+/* Capa 2 — Guardia contra escrituras destructivas.
+   Una escritura es sospechosa si vacía o reduce drásticamente algo que
+   sí tenía contenido confirmado. Ante la duda, preguntamos. */
+function isDestructiveWrite(nextState) {
+  if (!lastConfirmedRemoteState) return false;
+
+  const before = summarizeState(lastConfirmedRemoteState);
+  const after = summarizeState(nextState);
+
+  if (before.items === 0) return false;              // no había nada que perder
+  if (after.items === 0) return true;                // lo deja vacío
+  return after.items < Math.ceil(before.items / 2);  // borra más de la mitad
+}
+
+function confirmDestructiveWrite(nextState) {
+  const before = summarizeState(lastConfirmedRemoteState);
+  const after = summarizeState(nextState);
+
+  return confirm(
+    'Este cambio reduce mucho la información guardada:\n\n' +
+    `  Antes:  ${before.items} ítems en ${before.lists} listas\n` +
+    `  Ahora:  ${after.items} ítems en ${after.lists} listas\n\n` +
+    'Se guardó una copia local por si acaso.\n¿Confirmas que quieres guardar así?'
+  );
+}
+
+/* Capa 3 — Historial en Firestore.
+   Guardamos una versión aparte, pero NO en cada toque: marcar 20 ítems al
+   empacar no debe generar 20 versiones. Se escribe si pasó el intervalo
+   mínimo o si el cambio es grande. */
+function shouldWriteVersion(cleanState) {
+  if (!lastVersionWriteAt) return true;
+  if (Date.now() - lastVersionWriteAt >= VERSION_MIN_INTERVAL_MS) return true;
+
+  // Cambio estructural (listas o ítems agregados/eliminados): vale la pena.
+  if (!lastVersionState) return true;
+  const before = summarizeState(lastVersionState);
+  const after = summarizeState(cleanState);
+  return before.items !== after.items || before.lists !== after.lists;
+}
+
+async function writeVersionSnapshot(cleanState) {
+  try {
+    const versionId = `${Date.now()}`;
+    const versionRef = doc(db, 'apps', APP_ID, VERSIONS_COLLECTION, versionId);
+
+    // expiresAt permite que la política TTL de Firestore las borre solas.
+    const expiresAt = new Date(Date.now() + VERSION_TTL_DAYS * 86400000);
+
+    await setDoc(versionRef, { ...createRemotePayload(cleanState), expiresAt });
+
+    lastVersionWriteAt = Date.now();
+    lastVersionState = deepClone(cleanState);
+  } catch (error) {
+    // El historial es un extra: si falla, el guardado principal sigue válido.
+    console.warn('No se pudo escribir la versión histórica:', error);
+  }
+}
+
+/* Escritura concurrente.
+   Alek y Cata pueden estar empacando al mismo tiempo. Antes, el último en
+   escribir pisaba al otro en silencio. Ahora la transacción compara la
+   revisión: si el remoto avanzó desde lo último que confirmamos, fusionamos
+   en vez de sobrescribir. */
+async function commitState(cleanState) {
+  let finalState = cleanState;
+
+  await runTransaction(db, async transaction => {
+    const snapshot = await transaction.get(sharedStateRef);
+    let toWrite = cleanState;
+
+    if (snapshot.exists()) {
+      const remoteData = snapshot.data();
+      const remoteRevision = Number(remoteData?.revision) || 0;
+
+      if (remoteRevision > knownRevision) {
+        // Alguien más escribió mientras editábamos: unimos los dos estados.
+        const remoteState = readRemoteState(remoteData);
+        toWrite = mergeStates(remoteState, cleanState);
+        console.info('Fusión por edición concurrente:', summarizeState(toWrite));
+      }
+
+      knownRevision = Math.max(knownRevision, remoteRevision);
+    }
+
+    finalState = toWrite;
+    transaction.set(
+      sharedStateRef,
+      { ...createRemotePayload(toWrite), revision: knownRevision + 1 },
+      { merge: true }
+    );
+  });
+
+  knownRevision += 1;
+  return finalState;
+}
+
+async function flushSave() {
   if (!currentUser || !isAllowedEmail(currentUser.email)) {
     showToast('Inicia sesión con una cuenta autorizada');
     return false;
@@ -452,9 +372,29 @@ async function save() {
 
   try {
     state = sanitizeState(state).state;
+
+    // Copia local ANTES de tocar nada remoto.
+    pushLocalBackup(state, 'antes-de-guardar');
+
+    if (isDestructiveWrite(state) && !confirmDestructiveWrite(state)) {
+      showToast('Guardado cancelado. No se cambió nada.');
+      setSyncStatus('Cambios sin guardar');
+      return false;
+    }
+
     setSyncStatus('Guardando…');
 
-    await setDoc(sharedStateRef, createRemotePayload(state));
+    const written = await commitState(state);
+
+    // Si la transacción fusionó con cambios de la otra persona, adoptamos
+    // el resultado para no quedar mostrando algo distinto a lo guardado.
+    if (summarizeState(written).items !== summarizeState(state).items) {
+      state = written;
+      render();
+      showToast('Se combinaron cambios de la otra persona');
+    }
+
+    if (shouldWriteVersion(written)) await writeVersionSnapshot(written);
 
     lastSavedAt = new Date().toLocaleTimeString('es-CO', {
       hour: '2-digit',
@@ -468,6 +408,33 @@ async function save() {
     showToast('No se pudo guardar en Firebase');
     return false;
   }
+}
+
+/* save() agrupa ráfagas: marcar cinco ítems seguidos es una sola escritura.
+   Devuelve una promesa por si alguien necesita esperar el guardado real. */
+function save() {
+  setSyncStatus('Cambios sin guardar…');
+
+  if (saveTimer) clearTimeout(saveTimer);
+
+  return new Promise(resolve => {
+    pendingSaveResolvers.push(resolve);
+
+    saveTimer = setTimeout(async () => {
+      saveTimer = null;
+      const resolvers = pendingSaveResolvers.splice(0);
+      const result = await flushSave();
+      resolvers.forEach(fn => fn(result));
+    }, SAVE_DEBOUNCE_MS);
+  });
+}
+
+/* Si cierran la pestaña con un guardado pendiente, lo mandamos ya. */
+function flushPendingSaveNow() {
+  if (!saveTimer) return;
+  clearTimeout(saveTimer);
+  saveTimer = null;
+  flushSave();
 }
 
 function backupCurrentStateBeforeImport() {
@@ -497,10 +464,27 @@ function startRemoteSync() {
     async snapshot => {
       try {
         if (!snapshot.exists()) {
+          // NO crear el documento automáticamente: si algo falló y el doc
+          // desapareció, escribir aquí borraría de forma definitiva lo que
+          // hubiera. Mostramos el estado vacío solo en memoria y avisamos.
           state = defaultState();
-          await setDoc(sharedStateRef, createRemotePayload(state));
+          initialRemoteLoaded = true;
+          showAppShell();
+          render();
+          setSyncStatus('Sin datos');
+          showToast('No hay datos guardados en Firebase. No se escribió nada.');
+          return;
         } else {
-          state = readRemoteState(snapshot.data());
+          const remoteData = snapshot.data();
+          state = readRemoteState(remoteData);
+          knownRevision = Math.max(knownRevision, Number(remoteData?.revision) || 0);
+
+          // Firestore nos confirmó este contenido: se vuelve la referencia
+          // para detectar escrituras destructivas, y queda copiado localmente.
+          if (!snapshot.metadata.hasPendingWrites) {
+            lastConfirmedRemoteState = deepClone(state);
+            pushLocalBackup(state, 'confirmado-remoto');
+          }
         }
 
         initialRemoteLoaded = true;
@@ -1707,6 +1691,13 @@ function bindEvents() {
 function init() {
   bindEvents();
   initAuth();
+
+  // Con el debounce, un cambio puede quedar en el aire si cierran la app.
+  // visibilitychange es más confiable que beforeunload en móvil.
+  document.addEventListener('visibilitychange', () => {
+    if (document.visibilityState === 'hidden') flushPendingSaveNow();
+  });
+  window.addEventListener('pagehide', flushPendingSaveNow);
 }
 
 init();

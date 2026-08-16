@@ -1,0 +1,9 @@
+# Respaldos con contenido personal.
+# El repo es público: estos archivos traen las listas reales (incluida
+# información de salud), así que no se versionan.
+maleta-backup-*.json
+maleta-carga-inicial.json
+
+# Firebase
+.firebase/
+*-debug.log
