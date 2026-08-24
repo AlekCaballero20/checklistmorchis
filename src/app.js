@@ -859,6 +859,17 @@ function deleteItem(id) {
   return true;
 }
 
+function updateItemText(id, text) {
+  const item = state.items.find(entry => entry.id === id);
+  const cleanText = truncateChars(safeString(text).trim(), 80);
+
+  if (!item || !cleanText) return false;
+
+  item.text = cleanText;
+  save();
+  return true;
+}
+
 function reorderActiveItems(orderedIds) {
   const activeIds = new Set(getActiveItems().map(item => item.id));
   const orderedActiveItems = orderedIds
@@ -979,6 +990,17 @@ function renderItems() {
       </span>
 
       <button
+        class="itemEdit"
+        type="button"
+        data-action="edit-item"
+        data-id="${esc(item.id)}"
+        aria-label="Editar nombre del ítem"
+        title="Editar nombre"
+      >
+        ✎
+      </button>
+
+      <button
         class="itemDuplicate"
         type="button"
         data-action="duplicate-item"
@@ -1090,7 +1112,7 @@ function openModal(id, returnEl) {
   const overlay = $(id);
   if (!overlay) return;
 
-  ['addOverlay', 'duplicateOverlay', 'copyListOverlay', 'listsOverlay'].forEach(otherId => {
+  ['addOverlay', 'editOverlay', 'duplicateOverlay', 'copyListOverlay', 'listsOverlay'].forEach(otherId => {
     if (otherId !== id) hideModalSilently(otherId);
   });
 
@@ -1117,6 +1139,10 @@ function closeModal(id) {
     duplicateItemId = '';
   }
 
+  if (id === 'editOverlay') {
+    editingItemId = '';
+  }
+
   if (wasOpen && returnFocusEl) {
     returnFocusEl.focus();
     returnFocusEl = null;
@@ -1124,7 +1150,7 @@ function closeModal(id) {
 }
 
 function closeAllModals() {
-  ['addOverlay', 'duplicateOverlay', 'copyListOverlay', 'listsOverlay'].forEach(hideModalSilently);
+  ['addOverlay', 'editOverlay', 'duplicateOverlay', 'copyListOverlay', 'listsOverlay'].forEach(hideModalSilently);
   syncBodyScrollLock();
 }
 
@@ -1138,6 +1164,22 @@ function openAddModal(returnEl) {
   if (newEmoji) newEmoji.value = '';
 
   openModal('addOverlay', returnEl);
+}
+
+let editingItemId = '';
+
+function openEditItemModal(itemId, returnEl) {
+  const item = state.items.find(entry => entry.id === itemId);
+  if (!item) {
+    showToast('No se encontró el ítem');
+    return;
+  }
+
+  editingItemId = item.id;
+  const nameInput = $('editItemName');
+  if (nameInput) nameInput.value = item.text;
+
+  openModal('editOverlay', returnEl);
 }
 
 function openListsModal(returnEl) {
@@ -1247,6 +1289,25 @@ function doAddItem() {
   closeModal('addOverlay');
   render();
   showToast('✅ Ítem agregado');
+}
+
+function doEditItem() {
+  const nameInput = $('editItemName');
+  const text = safeString(nameInput?.value).trim();
+
+  if (!text) {
+    nameInput?.focus();
+    return;
+  }
+
+  if (!updateItemText(editingItemId, text)) {
+    showToast('No se pudo editar el ítem');
+    return;
+  }
+
+  closeModal('editOverlay');
+  render();
+  showToast('✅ Nombre actualizado');
 }
 
 function doAddList() {
@@ -1509,6 +1570,11 @@ function bindEvents() {
         break;
       }
 
+      case 'edit-item': {
+        openEditItemModal(id, actionEl);
+        break;
+      }
+
       case 'duplicate-item': {
         openDuplicateModal(id, actionEl);
         break;
@@ -1551,6 +1617,7 @@ function bindEvents() {
 
   // Cerrar modales
   on('btnCloseAdd', 'click', () => closeModal('addOverlay'));
+  on('btnCloseEdit', 'click', () => closeModal('editOverlay'));
   on('btnCloseDuplicate', 'click', () => closeModal('duplicateOverlay'));
   on('btnCloseCopyList', 'click', () => closeModal('copyListOverlay'));
   on('btnCloseLists', 'click', () => closeModal('listsOverlay'));
@@ -1582,6 +1649,18 @@ function bindEvents() {
   on('newItemList', 'keydown', event => {
     if (event.key === 'Escape') {
       closeModal('addOverlay');
+    }
+  });
+
+  // Editar ítem
+  on('btnSaveEditItem', 'click', doEditItem);
+  on('editItemName', 'keydown', event => {
+    if (event.key === 'Enter') {
+      event.preventDefault();
+      doEditItem();
+    }
+    if (event.key === 'Escape') {
+      closeModal('editOverlay');
     }
   });
 

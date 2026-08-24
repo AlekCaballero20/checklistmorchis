@@ -328,6 +328,7 @@ body {
 .footerBtn,
 .closeBtn,
 .itemToggle,
+.itemEdit,
 .itemDuplicate,
 .itemDelete,
 .listChipLabel,
@@ -583,6 +584,7 @@ body {
   text-decoration: line-through;
 }
 
+.itemEdit,
 .itemDuplicate,
 .itemDelete {
   width: 30px;
@@ -605,10 +607,13 @@ body {
     transform 0.12s ease;
 }
 
+.itemEdit,
 .itemDuplicate {
   font-size: 14px;
 }
 
+.item:hover .itemEdit,
+.item:focus-within .itemEdit,
 .item:hover .itemDuplicate,
 .item:focus-within .itemDuplicate,
 .item:hover .itemDelete,
@@ -617,15 +622,22 @@ body {
 }
 
 @media (hover: none) {
+  .itemEdit,
   .itemDuplicate,
   .itemDelete {
     opacity: 0.5;
   }
 }
 
+.itemEdit:active,
 .itemDuplicate:active,
 .itemDelete:active {
   transform: scale(0.92);
+}
+
+.itemEdit:active {
+  background: rgba(124, 92, 255, 0.12);
+  color: var(--purple);
 }
 
 .itemDuplicate:active {

@@ -235,6 +235,51 @@
     </div>
   </div>
 
+  <!-- Modal: Editar ítem -->
+  <div id="editOverlay" class="modalOverlay" aria-hidden="true">
+    <div
+      class="modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="editItemTitle"
+      aria-describedby="editItemDescription"
+    >
+      <div class="modalHeader">
+        <h2 class="modalTitle" id="editItemTitle">Editar ítem</h2>
+        <button
+          id="btnCloseEdit"
+          class="closeBtn"
+          type="button"
+          aria-label="Cerrar"
+        >
+          ✕
+        </button>
+      </div>
+
+      <div class="modalBody">
+        <p id="editItemDescription" class="modalHelp">
+          Cambia el nombre del ítem. Su emoji y estado se conservarán.
+        </p>
+
+        <label class="field" for="editItemName">
+          <span>Nombre</span>
+          <input
+            id="editItemName"
+            class="input"
+            type="text"
+            maxlength="80"
+            autocomplete="off"
+            enterkeyhint="done"
+          />
+        </label>
+
+        <button id="btnSaveEditItem" class="btn primary full" type="button">
+          Guardar cambio
+        </button>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal: Duplicar ítem -->
   <div id="duplicateOverlay" class="modalOverlay" aria-hidden="true">
     <div
