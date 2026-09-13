@@ -18,8 +18,12 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
 
 import {
+  compareLists,
   deepClone,
   defaultState,
+  EMOJI_MAX,
+  ITEM_TEXT_MAX,
+  itemKey,
   mergeStates,
   normalizeText,
   nowIso,
@@ -53,7 +57,12 @@ const VERSIONS_COLLECTION = 'versiones'; // historial en Firestore
 const LOCAL_BACKUP_KEY = 'maleta_local_backups_v1';
 const LOCAL_BACKUP_LIMIT = 20;           // copias locales que conservamos
 
-const SAVE_DEBOUNCE_MS = 1500;           // agrupa ráfagas de cambios
+/* Debounce de guardado.
+   SAVE_DEBOUNCE_MS es corto para que un toque suelto se guarde rápido, y
+   SAVE_MAX_WAIT_MS evita que una ráfaga larga de toques posponga el
+   guardado para siempre: pase lo que pase, se escribe dentro de ese tope. */
+const SAVE_DEBOUNCE_MS = 600;            // agrupa ráfagas de cambios
+const SAVE_MAX_WAIT_MS = 3000;           // tope máximo de espera
 const VERSION_MIN_INTERVAL_MS = 5 * 60 * 1000; // 5 min entre versiones
 const VERSION_TTL_DAYS = 90;             // el historial se borra solo
 const ALLOWED_EMAILS = [
@@ -158,6 +167,20 @@ let lastConfirmedRemoteState = null;
 // Control de escrituras agrupadas (debounce).
 let saveTimer = null;
 let pendingSaveResolvers = [];
+let firstPendingEditAt = 0;
+
+/* Contador de ediciones locales.
+   Sube con cada cambio del usuario; savedEditSeq queda en el valor que
+   alcanzó a escribirse. Si los dos números no coinciden, la pantalla va
+   adelante del servidor y por eso NINGÚN snapshot remoto puede pisarla:
+   ese era el bug de "marco tres ítems y se desmarcan los últimos dos". */
+let localEditSeq = 0;
+let savedEditSeq = 0;
+let saveInFlight = false;
+
+// Si llegan cambios de la otra persona mientras editamos, los mostramos
+// apenas terminemos de guardar, no encima de lo que se está tocando.
+let remoteChangesWaiting = false;
 
 // Control del historial de versiones.
 let lastVersionWriteAt = 0;
@@ -175,9 +198,45 @@ function setAuthMessage(message) {
   if (el) el.textContent = message || '';
 }
 
+/* Un solo lugar decide qué dice el indicador de sincronización.
+   Antes lo escribían cinco sitios distintos y por eso parpadeaba entre
+   "Guardando…" y "Sincronizado" en cada toque. */
+let syncStatusOverride = '';
+
 function setSyncStatus(message) {
+  syncStatusOverride = message || '';
+  paintSyncStatus();
+}
+
+function hasUnsavedLocalEdits() {
+  return localEditSeq !== savedEditSeq;
+}
+
+function paintSyncStatus() {
   const el = $('syncStatus');
-  if (el) el.textContent = message || '';
+  if (!el) return;
+
+  // Mensajes duros (carga, error, sin acceso) mandan sobre todo lo demás.
+  if (syncStatusOverride) {
+    el.textContent = syncStatusOverride;
+    el.dataset.state = 'info';
+    return;
+  }
+
+  if (saveInFlight) {
+    el.textContent = 'Guardando…';
+    el.dataset.state = 'saving';
+    return;
+  }
+
+  if (hasUnsavedLocalEdits()) {
+    el.textContent = 'Sin guardar';
+    el.dataset.state = 'pending';
+    return;
+  }
+
+  el.textContent = lastSavedAt ? `Sincronizado ${lastSavedAt}` : 'Sincronizado';
+  el.dataset.state = 'synced';
 }
 
 function setCurrentUserLabel(user) {
@@ -345,7 +404,10 @@ async function commitState(cleanState) {
       if (remoteRevision > knownRevision) {
         // Alguien más escribió mientras editábamos: unimos los dos estados.
         const remoteState = readRemoteState(remoteData);
-        toWrite = mergeStates(remoteState, cleanState);
+        // doneStrategy 'incoming': lo que llega es lo que el usuario acabó
+        // de hacer acá. Sin esto, desmarcar un ítem que la otra persona
+        // tenía marcado no servía de nada (el marcado era pegajoso).
+        toWrite = mergeStates(remoteState, cleanState, { doneStrategy: 'incoming' });
         console.info('Fusión por edición concurrente:', summarizeState(toWrite));
       }
 
@@ -370,6 +432,12 @@ async function flushSave() {
     return false;
   }
 
+  // Dejamos constancia de hasta dónde alcanza esta escritura. Si el usuario
+  // sigue marcando mientras Firestore responde, esos cambios quedan por
+  // fuera de este guardado — y por eso no podemos pisar la pantalla con el
+  // resultado: se guardan en la siguiente pasada.
+  const seqAtWrite = localEditSeq;
+
   try {
     state = sanitizeState(state).state;
 
@@ -378,17 +446,27 @@ async function flushSave() {
 
     if (isDestructiveWrite(state) && !confirmDestructiveWrite(state)) {
       showToast('Guardado cancelado. No se cambió nada.');
-      setSyncStatus('Cambios sin guardar');
+      setSyncStatus('');
       return false;
     }
 
-    setSyncStatus('Guardando…');
+    saveInFlight = true;
+    setSyncStatus('');
 
     const written = await commitState(state);
 
-    // Si la transacción fusionó con cambios de la otra persona, adoptamos
-    // el resultado para no quedar mostrando algo distinto a lo guardado.
-    if (summarizeState(written).items !== summarizeState(state).items) {
+    savedEditSeq = seqAtWrite;
+
+    lastSavedAt = new Date().toLocaleTimeString('es-CO', {
+      hour: '2-digit',
+      minute: '2-digit'
+    });
+
+    // Si la transacción fusionó con cambios de la otra persona, adoptamos el
+    // resultado — pero solo si la pantalla no avanzó mientras escribíamos.
+    const mergedSomething = summarizeState(written).items !== summarizeState(state).items;
+
+    if (mergedSomething && localEditSeq === seqAtWrite) {
       state = written;
       render();
       showToast('Se combinaron cambios de la otra persona');
@@ -396,24 +474,37 @@ async function flushSave() {
 
     if (shouldWriteVersion(written)) await writeVersionSnapshot(written);
 
-    lastSavedAt = new Date().toLocaleTimeString('es-CO', {
-      hour: '2-digit',
-      minute: '2-digit'
-    });
-    setSyncStatus(`Guardado ${lastSavedAt}`);
     return true;
   } catch (error) {
     console.error(error);
-    setSyncStatus('Error al guardar');
     showToast('No se pudo guardar en Firebase');
+    setSyncStatus('Error al guardar');
     return false;
+  } finally {
+    saveInFlight = false;
+    paintSyncStatus();
+
+    // Terminamos de escribir: ya es seguro mostrar lo que llegó del otro lado.
+    if (!hasUnsavedLocalEdits() && remoteChangesWaiting) {
+      remoteChangesWaiting = false;
+      adoptRemoteState();
+    }
   }
 }
 
 /* save() agrupa ráfagas: marcar cinco ítems seguidos es una sola escritura.
    Devuelve una promesa por si alguien necesita esperar el guardado real. */
 function save() {
-  setSyncStatus('Cambios sin guardar…');
+  localEditSeq += 1;
+  setSyncStatus('');
+
+  const now = Date.now();
+  if (!firstPendingEditAt) firstPendingEditAt = now;
+
+  // El debounce se reinicia con cada toque, pero nunca más allá del tope:
+  // así una ráfaga de 20 marcados no deja el guardado esperando eternamente.
+  const remaining = SAVE_MAX_WAIT_MS - (now - firstPendingEditAt);
+  const delay = Math.max(100, Math.min(SAVE_DEBOUNCE_MS, remaining));
 
   if (saveTimer) clearTimeout(saveTimer);
 
@@ -422,10 +513,11 @@ function save() {
 
     saveTimer = setTimeout(async () => {
       saveTimer = null;
+      firstPendingEditAt = 0;
       const resolvers = pendingSaveResolvers.splice(0);
       const result = await flushSave();
       resolvers.forEach(fn => fn(result));
-    }, SAVE_DEBOUNCE_MS);
+    }, delay);
   });
 }
 
@@ -434,6 +526,7 @@ function flushPendingSaveNow() {
   if (!saveTimer) return;
   clearTimeout(saveTimer);
   saveTimer = null;
+  firstPendingEditAt = 0;
   flushSave();
 }
 
@@ -447,6 +540,27 @@ function backupCurrentStateBeforeImport() {
   downloadTextFile(filename, JSON.stringify(envelope, null, 2));
 }
 
+/* Último estado que vimos en Firestore, aún sin pintar si estábamos
+   editando. adoptRemoteState() lo pasa a la pantalla cuando es seguro. */
+let pendingRemoteState = null;
+
+function adoptRemoteState() {
+  if (!pendingRemoteState) return;
+
+  const incoming = pendingRemoteState;
+  pendingRemoteState = null;
+  remoteChangesWaiting = false;
+
+  const changed = JSON.stringify(incoming) !== JSON.stringify(state);
+  state = incoming;
+
+  // Lo remoto y la pantalla coinciden: ya no hay nada pendiente.
+  savedEditSeq = localEditSeq;
+
+  if (changed) render();
+  paintSyncStatus();
+}
+
 function stopRemoteSync() {
   if (typeof unsubscribeRemoteState === 'function') {
     unsubscribeRemoteState();
@@ -457,6 +571,9 @@ function stopRemoteSync() {
 function startRemoteSync() {
   stopRemoteSync();
   initialRemoteLoaded = false;
+  pendingRemoteState = null;
+  remoteChangesWaiting = false;
+  savedEditSeq = localEditSeq;
   setSyncStatus('Cargando…');
 
   unsubscribeRemoteState = onSnapshot(
@@ -476,27 +593,36 @@ function startRemoteSync() {
           return;
         } else {
           const remoteData = snapshot.data();
-          state = readRemoteState(remoteData);
+          const remoteState = readRemoteState(remoteData);
           knownRevision = Math.max(knownRevision, Number(remoteData?.revision) || 0);
 
           // Firestore nos confirmó este contenido: se vuelve la referencia
           // para detectar escrituras destructivas, y queda copiado localmente.
           if (!snapshot.metadata.hasPendingWrites) {
-            lastConfirmedRemoteState = deepClone(state);
-            pushLocalBackup(state, 'confirmado-remoto');
+            lastConfirmedRemoteState = deepClone(remoteState);
+            pushLocalBackup(remoteState, 'confirmado-remoto');
+          }
+
+          pendingRemoteState = remoteState;
+
+          /* Acá estaba el bug: antes se hacía `state = remoteState` en cada
+             snapshot. El eco de nuestro propio guardado llegaba con el estado
+             de hace un segundo y borraba los ítems marcados después, así que
+             marcar rápido tres cosas desmarcaba las dos últimas.
+
+             Regla nueva: si la pantalla tiene cambios sin guardar, ella manda.
+             Lo remoto espera; la fusión real la hace commitState comparando
+             revisiones. */
+          if (!initialRemoteLoaded || !hasUnsavedLocalEdits()) {
+            adoptRemoteState();
+          } else {
+            remoteChangesWaiting = true;
           }
         }
 
         initialRemoteLoaded = true;
         showAppShell();
-        render();
-
-        if (snapshot.metadata.hasPendingWrites) {
-          setSyncStatus('Guardando…');
-        } else {
-          const suffix = lastSavedAt ? ` ${lastSavedAt}` : '';
-          setSyncStatus(`Sincronizado${suffix}`);
-        }
+        setSyncStatus('');
       } catch (error) {
         console.error(error);
         setSyncStatus('Error al cargar');
@@ -808,17 +934,13 @@ function copyListItems(sourceListId, targetListId, mode) {
   }
 
   // mode === 'skip': copia solo los que faltan, sin duplicar, en orden.
-  const existing = new Set(
-    getListItems(cleanTarget).map(item =>
-      `${normalizeText(item.text)}::${safeString(item.emoji).trim()}`
-    )
-  );
+  const existing = new Set(getListItems(cleanTarget).map(itemKey));
 
   const copies = [];
   let skipped = 0;
 
   sourceItems.forEach(source => {
-    const fp = `${normalizeText(source.text)}::${safeString(source.emoji).trim()}`;
+    const fp = itemKey(source);
     if (existing.has(fp)) {
       skipped += 1;
       return;
@@ -841,12 +963,62 @@ function copyListItems(sourceListId, targetListId, mode) {
   return { ok: true, added: copies.length, skipped, mode };
 }
 
+/* Agrega varios ítems a una lista en UN solo guardado (no uno por ítem).
+   Salta lo que ya existe por contenido, así que es idempotente: darle dos
+   veces al botón no duplica nada. */
+function addItemsToList(listId, entries) {
+  const targetId = safeString(listId).trim();
+  if (!state.lists.find(list => list.id === targetId)) return 0;
+
+  const existing = new Set(getListItems(targetId).map(itemKey));
+  const copies = [];
+
+  (Array.isArray(entries) ? entries : []).forEach(entry => {
+    const text = truncateChars(safeString(entry?.text).trim(), ITEM_TEXT_MAX);
+    if (!text) return;
+
+    const emoji = truncateChars(safeString(entry?.emoji).trim(), EMOJI_MAX);
+    const key = itemKey({ text, emoji });
+    if (existing.has(key)) return;
+
+    existing.add(key);
+    copies.push({ id: uid(), listId: targetId, text, emoji, done: false });
+  });
+
+  if (!copies.length) return 0;
+
+  state.items.push(...copies);
+  save();
+  return copies.length;
+}
+
 function toggleItem(id) {
   const item = state.items.find(entry => entry.id === id);
   if (!item) return false;
 
   item.done = !item.done;
   save();
+  return true;
+}
+
+/* Marcar un ítem no necesita reconstruir el HTML de toda la lista: con
+   listas largas eso se siente lento y pierde el foco. Tocamos solo la fila
+   y el progreso, así el check aparece de una y se pueden marcar varios
+   seguidos sin esperar nada. */
+function patchItemRow(id) {
+  const item = state.items.find(entry => entry.id === id);
+  const row = $('list')?.querySelector(`.item[data-id="${CSS.escape(id)}"]`);
+
+  if (!item || !row) return false;
+
+  row.classList.toggle('isDone', Boolean(item.done));
+
+  const toggle = row.querySelector('.itemToggle');
+  if (toggle) {
+    toggle.textContent = item.done ? '✅' : '';
+    toggle.setAttribute('aria-label', item.done ? 'Desmarcar' : 'Marcar como listo');
+  }
+
   return true;
 }
 
@@ -1112,7 +1284,7 @@ function openModal(id, returnEl) {
   const overlay = $(id);
   if (!overlay) return;
 
-  ['addOverlay', 'editOverlay', 'duplicateOverlay', 'copyListOverlay', 'listsOverlay'].forEach(otherId => {
+  ['addOverlay', 'editOverlay', 'duplicateOverlay', 'copyListOverlay', 'compareOverlay', 'listsOverlay'].forEach(otherId => {
     if (otherId !== id) hideModalSilently(otherId);
   });
 
@@ -1143,6 +1315,10 @@ function closeModal(id) {
     editingItemId = '';
   }
 
+  if (id === 'compareOverlay') {
+    lastCompare = null;
+  }
+
   if (wasOpen && returnFocusEl) {
     returnFocusEl.focus();
     returnFocusEl = null;
@@ -1150,7 +1326,7 @@ function closeModal(id) {
 }
 
 function closeAllModals() {
-  ['addOverlay', 'editOverlay', 'duplicateOverlay', 'copyListOverlay', 'listsOverlay'].forEach(hideModalSilently);
+  ['addOverlay', 'editOverlay', 'duplicateOverlay', 'copyListOverlay', 'compareOverlay', 'listsOverlay'].forEach(hideModalSilently);
   syncBodyScrollLock();
 }
 
@@ -1246,6 +1422,188 @@ function openCopyListModal(returnEl) {
   if (skip) skip.checked = true;
 
   openModal('copyListOverlay', returnEl);
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+   COMPARAR LISTAS
+   La comparación se calcula en state.core.js (pura y testeada). Acá solo la
+   pintamos y dejamos escoger qué ítems se agregan.
+──────────────────────────────────────────────────────────────────────────── */
+// Última comparación calculada: las casillas apuntan a sus índices.
+let lastCompare = null;
+
+function openCompareModal(returnEl) {
+  if (state.lists.length < 2) {
+    showToast('Necesitas dos listas para comparar');
+    return;
+  }
+
+  populateListSelect('compareListA');
+  populateListSelect('compareListB');
+
+  const selectA = $('compareListA');
+  const selectB = $('compareListB');
+
+  if (selectA) selectA.value = state.activeListId;
+  if (selectB) {
+    selectB.value =
+      state.lists.find(list => list.id !== state.activeListId)?.id || state.activeListId;
+  }
+
+  renderCompare();
+  openModal('compareOverlay', returnEl);
+}
+
+function renderCompareSection({ side, title, help, targetList, entries }) {
+  if (!entries.length) {
+    return `
+      <div class="compareBlock isEmpty">
+        <p class="compareBlockTitle">${esc(title)}</p>
+        <p class="compareBlockHelp">Nada pendiente por acá. 🎉</p>
+      </div>
+    `;
+  }
+
+  const rows = entries.map((entry, index) => `
+    <label class="compareRow" for="cmp_${esc(side)}_${index}">
+      <input
+        id="cmp_${esc(side)}_${index}"
+        class="compareCheck"
+        type="checkbox"
+        data-compare-side="${esc(side)}"
+        data-index="${index}"
+        checked
+      />
+      <span class="compareRowText">
+        ${entry.emoji ? `${esc(entry.emoji)} ` : ''}${esc(entry.text)}
+      </span>
+    </label>
+  `).join('');
+
+  return `
+    <div class="compareBlock">
+      <p class="compareBlockTitle">${esc(title)} <span class="compareCount">${entries.length}</span></p>
+      <p class="compareBlockHelp">${esc(help)}</p>
+
+      <div class="compareRows">${rows}</div>
+
+      <div class="heroQuick">
+        <button
+          class="btn mini"
+          type="button"
+          data-action="compare-toggle-all"
+          data-side="${esc(side)}"
+        >
+          ☑️ Marcar / desmarcar todos
+        </button>
+
+        <button
+          class="btn mini primary"
+          type="button"
+          data-action="compare-add"
+          data-side="${esc(side)}"
+        >
+          ＋ Agregar a ${esc(targetList.icon)} ${esc(targetList.name)}
+        </button>
+      </div>
+    </div>
+  `;
+}
+
+function renderCompare() {
+  const container = $('compareResult');
+  if (!container) return;
+
+  const idA = $('compareListA')?.value || '';
+  const idB = $('compareListB')?.value || '';
+  const result = compareLists(state, idA, idB);
+
+  lastCompare = result;
+
+  if (!result.ok) {
+    const message =
+      result.reason === 'same-list'
+        ? 'Elige dos listas diferentes para comparar.'
+        : 'No se encontraron las listas a comparar.';
+
+    container.innerHTML = `<p class="compareNotice">${esc(message)}</p>`;
+    return;
+  }
+
+  const { listA, listB, totals, onlyInA, onlyInB, inBoth } = result;
+
+  container.innerHTML = `
+    <p class="compareSummary">
+      <strong>${esc(listA.icon)} ${esc(listA.name)}</strong>: ${totals.a} ítems ·
+      <strong>${esc(listB.icon)} ${esc(listB.name)}</strong>: ${totals.b} ítems ·
+      coinciden ${inBoth.length}
+    </p>
+
+    ${renderCompareSection({
+      side: 'toB',
+      title: `Le falta a ${listB.icon} ${listB.name}`,
+      help: `Están en ${listA.name} pero no en ${listB.name}.`,
+      targetList: listB,
+      entries: onlyInA
+    })}
+
+    ${renderCompareSection({
+      side: 'toA',
+      title: `Le falta a ${listA.icon} ${listA.name}`,
+      help: `Están en ${listB.name} pero no en ${listA.name}.`,
+      targetList: listA,
+      entries: onlyInB
+    })}
+  `;
+}
+
+function getCompareSelection(side) {
+  if (!lastCompare?.ok) return { entries: [], targetId: '' };
+
+  const pool = side === 'toB' ? lastCompare.onlyInA : lastCompare.onlyInB;
+  const targetId = side === 'toB' ? lastCompare.listB.id : lastCompare.listA.id;
+
+  const checked = Array.from(
+    document.querySelectorAll(`.compareCheck[data-compare-side="${side}"]`)
+  ).filter(input => input.checked);
+
+  const entries = checked
+    .map(input => pool[Number(input.dataset.index)])
+    .filter(Boolean);
+
+  return { entries, targetId };
+}
+
+function doCompareAdd(side) {
+  const { entries, targetId } = getCompareSelection(side);
+
+  if (!entries.length) {
+    showToast('No hay ítems seleccionados');
+    return;
+  }
+
+  const added = addItemsToList(targetId, entries);
+
+  if (!added) {
+    showToast('Esos ítems ya estaban en la lista');
+    return;
+  }
+
+  render();
+  renderCompare();
+  showToast(`✅ ${added} ${added === 1 ? 'ítem agregado' : 'ítems agregados'}`);
+}
+
+function doCompareToggleAll(side) {
+  const inputs = Array.from(
+    document.querySelectorAll(`.compareCheck[data-compare-side="${side}"]`)
+  );
+  if (!inputs.length) return;
+
+  const turnOn = inputs.some(input => !input.checked);
+  inputs.forEach(input => {
+    input.checked = turnOn;
+  });
 }
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -1558,7 +1916,11 @@ function bindEvents() {
 
     switch (action) {
       case 'toggle': {
-        if (toggleItem(id)) render();
+        if (!toggleItem(id)) break;
+
+        // Repintado quirúrgico; si por algo la fila no existe, render completo.
+        if (patchItemRow(id)) renderHero();
+        else render();
         break;
       }
 
@@ -1577,6 +1939,16 @@ function bindEvents() {
 
       case 'duplicate-item': {
         openDuplicateModal(id, actionEl);
+        break;
+      }
+
+      case 'compare-add': {
+        doCompareAdd(actionEl.dataset.side || '');
+        break;
+      }
+
+      case 'compare-toggle-all': {
+        doCompareToggleAll(actionEl.dataset.side || '');
         break;
       }
 
@@ -1625,6 +1997,12 @@ function bindEvents() {
   // Copiar lista completa
   on('btnOpenCopyList', 'click', () => openCopyListModal($('btnOpenCopyList')));
   on('btnConfirmCopyList', 'click', doCopyList);
+
+  // Comparar listas
+  on('btnOpenCompare', 'click', () => openCompareModal($('btnOpenCompare')));
+  on('btnCloseCompare', 'click', () => closeModal('compareOverlay'));
+  on('compareListA', 'change', renderCompare);
+  on('compareListB', 'change', renderCompare);
 
   // Crear ítem
   on('btnCreate', 'click', doAddItem);

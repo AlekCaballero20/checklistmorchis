@@ -1276,3 +1276,147 @@ body {
   font-size: 13px;
   margin-top: 2px;
 }
+
+/* =============================================================================
+   ESTADO DE SINCRONIZACIÓN
+   Un punto de color dice lo mismo que el texto pero se lee de un vistazo,
+   sin tener que leer "Sincronizado" cada vez que se marca algo.
+============================================================================= */
+.syncStatus::before {
+  content: '';
+  display: inline-block;
+  width: 6px;
+  height: 6px;
+  margin-right: 5px;
+  border-radius: 50%;
+  background: var(--muted);
+  vertical-align: middle;
+}
+
+.syncStatus[data-state='synced']::before {
+  background: var(--success);
+}
+
+.syncStatus[data-state='pending']::before {
+  background: var(--pink);
+}
+
+.syncStatus[data-state='saving']::before {
+  background: var(--purple);
+  animation: syncPulse 1s ease-in-out infinite;
+}
+
+@keyframes syncPulse {
+  0%, 100% { opacity: 1; }
+  50% { opacity: 0.25; }
+}
+
+@media (prefers-reduced-motion: reduce) {
+  .syncStatus[data-state='saving']::before {
+    animation: none;
+  }
+}
+
+/* =============================================================================
+   COMPARAR LISTAS
+============================================================================= */
+.compareResult {
+  display: flex;
+  flex-direction: column;
+  gap: 14px;
+  margin-top: 4px;
+}
+
+.compareSummary,
+.compareNotice {
+  margin: 0;
+  padding: 10px 12px;
+  border-radius: var(--r-md);
+  background: var(--grad-soft);
+  border: 1px solid var(--border);
+  color: var(--text);
+  font-size: 12.5px;
+  line-height: 1.5;
+}
+
+.compareNotice {
+  color: var(--muted);
+  text-align: center;
+}
+
+.compareBlock {
+  padding: 12px;
+  border-radius: var(--r-md);
+  background: var(--surface-2);
+  border: 1px solid var(--border);
+  display: flex;
+  flex-direction: column;
+  gap: 8px;
+}
+
+.compareBlock.isEmpty {
+  opacity: 0.75;
+}
+
+.compareBlockTitle {
+  margin: 0;
+  font-size: 13px;
+  font-weight: 800;
+  color: var(--text);
+  display: flex;
+  align-items: center;
+  gap: 8px;
+}
+
+.compareCount {
+  padding: 2px 8px;
+  border-radius: 999px;
+  background: var(--purple);
+  color: #fff;
+  font-size: 11px;
+  font-weight: 800;
+}
+
+.compareBlockHelp {
+  margin: 0;
+  font-size: 11.5px;
+  color: var(--muted);
+  line-height: 1.45;
+}
+
+.compareRows {
+  display: flex;
+  flex-direction: column;
+  gap: 2px;
+  max-height: 34vh;
+  overflow-y: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+.compareRow {
+  display: flex;
+  align-items: center;
+  gap: 10px;
+  padding: 9px 8px;
+  border-radius: var(--r-sm);
+  cursor: pointer;
+  font-size: 13.5px;
+  color: var(--text);
+}
+
+.compareRow:hover {
+  background: rgba(124, 92, 255, 0.07);
+}
+
+.compareCheck {
+  flex-shrink: 0;
+  width: 19px;
+  height: 19px;
+  accent-color: var(--purple);
+}
+
+.compareRowText {
+  flex: 1;
+  min-width: 0;
+  overflow-wrap: anywhere;
+}

@@ -6,7 +6,7 @@
 /* Subir esta versión en CADA cambio de los archivos del shell.
    Si no se sube, cleanOldCaches() no borra nada y los usuarios siguen
    viendo la versión anterior indefinidamente. */
-const CACHE_NAME = 'maleta-firebase-v6';
+const CACHE_NAME = 'maleta-firebase-v7';
 
 const APP_SHELL = [
   './',

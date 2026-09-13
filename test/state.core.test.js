@@ -7,9 +7,12 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  compareLists,
   defaultState,
   extractFlatStatePayload,
+  itemKey,
   mergeStates,
+  resolveDone,
   sanitizeState,
   summarizeState,
   truncateChars
@@ -277,4 +280,127 @@ test('truncateChars corta por caracteres visibles, no por bytes', () => {
   assert.equal(truncateChars('🏠🏠🏠', 2), '🏠🏠');
   assert.equal(truncateChars('hola', 10), 'hola');
   assert.equal(truncateChars(null, 5), '');
+});
+
+/* ────────────────────────────────────────────────────────────────────────────
+   resolveDone: quién gana cuando el mismo ítem llega con estados distintos
+──────────────────────────────────────────────────────────────────────────── */
+test('resolveDone por defecto gana marcado', () => {
+  assert.equal(resolveDone(true, false), true);
+  assert.equal(resolveDone(false, true), true);
+  assert.equal(resolveDone(false, false), false);
+});
+
+test('resolveDone con estrategia incoming respeta lo último que llega', () => {
+  assert.equal(resolveDone(true, false, 'incoming'), false);
+  assert.equal(resolveDone(false, true, 'incoming'), true);
+});
+
+test('resolveDone con estrategia current respeta lo local', () => {
+  assert.equal(resolveDone(false, true, 'current'), false);
+  assert.equal(resolveDone(true, false, 'current'), true);
+});
+
+test('mergeStates con doneStrategy incoming permite desmarcar', () => {
+  const remote = {
+    lists: [{ id: 'l1', name: 'Viaje', icon: '🧳' }],
+    items: [{ id: 'i1', listId: 'l1', text: 'Cargador', emoji: '', done: true }],
+    activeListId: 'l1'
+  };
+  const local = {
+    lists: [{ id: 'l1', name: 'Viaje', icon: '🧳' }],
+    items: [{ id: 'i1', listId: 'l1', text: 'Cargador', emoji: '', done: false }],
+    activeListId: 'l1'
+  };
+
+  const conDefault = mergeStates(remote, local);
+  assert.equal(conDefault.items[0].done, true, 'el default deja el marcado pegajoso');
+
+  const conIncoming = mergeStates(remote, local, { doneStrategy: 'incoming' });
+  assert.equal(conIncoming.items[0].done, false, 'la intención local debe ganar');
+});
+
+test('mergeStates conserva los marcados nuevos del lado que llega', () => {
+  // Escenario del bug: se marcan tres ítems seguidos mientras el remoto
+  // todavía tiene los tres sin marcar.
+  const remote = {
+    lists: [{ id: 'l1', name: 'Viaje', icon: '🧳' }],
+    items: [
+      { id: 'i1', listId: 'l1', text: 'Uno', emoji: '', done: false },
+      { id: 'i2', listId: 'l1', text: 'Dos', emoji: '', done: false },
+      { id: 'i3', listId: 'l1', text: 'Tres', emoji: '', done: false }
+    ],
+    activeListId: 'l1'
+  };
+  const local = deepCloneForTest(remote);
+  local.items.forEach(item => { item.done = true; });
+
+  const merged = mergeStates(remote, local, { doneStrategy: 'incoming' });
+  assert.deepEqual(merged.items.map(i => i.done), [true, true, true]);
+});
+
+function deepCloneForTest(value) {
+  return JSON.parse(JSON.stringify(value));
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+   itemKey y compareLists
+──────────────────────────────────────────────────────────────────────────── */
+test('itemKey ignora mayúsculas y espacios de más', () => {
+  assert.equal(
+    itemKey({ text: '  Cepillo   de Dientes ', emoji: '🪥' }),
+    itemKey({ text: 'cepillo de dientes', emoji: '🪥' })
+  );
+});
+
+const estadoParaComparar = () => ({
+  lists: [
+    { id: 'la', name: 'Viaje', icon: '🧳' },
+    { id: 'lb', name: 'Camping', icon: '⛺' }
+  ],
+  items: [
+    { id: 'a1', listId: 'la', text: 'Cargador', emoji: '🔌', done: false },
+    { id: 'a2', listId: 'la', text: 'Medias', emoji: '🧦', done: true },
+    { id: 'a3', listId: 'la', text: 'Cepillo', emoji: '🪥', done: false },
+    { id: 'b1', listId: 'lb', text: 'cargador', emoji: '🔌', done: true },
+    { id: 'b2', listId: 'lb', text: 'Carpa', emoji: '⛺', done: false }
+  ],
+  activeListId: 'la'
+});
+
+test('compareLists dice qué le falta a cada lista', () => {
+  const r = compareLists(estadoParaComparar(), 'la', 'lb');
+
+  assert.equal(r.ok, true);
+  assert.deepEqual(r.totals, { a: 3, b: 2 });
+  assert.deepEqual(r.onlyInA.map(i => i.text), ['Medias', 'Cepillo']);
+  assert.deepEqual(r.onlyInB.map(i => i.text), ['Carpa']);
+  assert.deepEqual(r.inBoth.map(i => i.text), ['Cargador']);
+});
+
+test('compareLists compara por contenido, no por id ni por estado', () => {
+  const r = compareLists(estadoParaComparar(), 'la', 'lb');
+  // "Cargador" y "cargador" son el mismo ítem aunque tengan ids y done distintos.
+  assert.equal(r.inBoth.length, 1);
+});
+
+test('compareLists no repite un ítem duplicado dentro de la misma lista', () => {
+  const s = estadoParaComparar();
+  s.items.push({ id: 'a4', listId: 'la', text: 'MEDIAS', emoji: '🧦', done: false });
+
+  const r = compareLists(s, 'la', 'lb');
+  assert.equal(r.onlyInA.filter(i => i.text.toLowerCase() === 'medias').length, 1);
+});
+
+test('compareLists se niega a comparar una lista consigo misma', () => {
+  const r = compareLists(estadoParaComparar(), 'la', 'la');
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'same-list');
+});
+
+test('compareLists avisa si la lista no existe', () => {
+  const r = compareLists(estadoParaComparar(), 'la', 'no-existe');
+  assert.equal(r.ok, false);
+  assert.equal(r.reason, 'missing-list');
+  assert.deepEqual(r.onlyInA, []);
 });

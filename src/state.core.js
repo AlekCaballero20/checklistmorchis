@@ -49,6 +49,15 @@ export function normalizeText(value) {
   return safeString(value).trim().toLowerCase().replace(/\s+/g, ' ');
 }
 
+/* Huella de un ítem SIN su lista: sirve para comparar "lo mismo" entre
+   listas distintas (comparar, copiar, evitar duplicados). */
+export function itemKey(item) {
+  return [
+    normalizeText(item?.text),
+    safeString(item?.emoji).trim()
+  ].join('::');
+}
+
 export function itemFingerprint(item) {
   return [
     safeString(item.listId).trim(),
@@ -220,7 +229,24 @@ export function sanitizeState(input) {
   };
 }
 
-export function mergeStates(currentState, importedState) {
+export function resolveDone(currentDone, incomingDone, strategy = 'or') {
+  if (strategy === 'current') return Boolean(currentDone);
+  if (strategy === 'incoming') return Boolean(incomingDone);
+  return Boolean(currentDone || incomingDone);
+}
+
+/* mergeStates fusiona dos estados sin perder contenido.
+
+   doneStrategy decide quién gana cuando el mismo ítem existe en los dos
+   lados con distinto estado:
+     'or'       -> gana marcado (por defecto; útil al importar respaldos)
+     'current'  -> gana lo que tiene el estado actual (la UI local)
+     'incoming' -> gana lo que llega (lo último que quiso el usuario)
+
+   El default sigue siendo 'or' para no cambiar el comportamiento de la
+   importación de respaldos. */
+export function mergeStates(currentState, importedState, options = {}) {
+  const doneStrategy = options.doneStrategy || 'or';
   const current = sanitizeState(currentState).state;
   const incoming = sanitizeState(importedState).state;
 
@@ -245,7 +271,7 @@ export function mergeStates(currentState, importedState) {
 
     const existingById = itemById.get(item.id);
     if (existingById) {
-      existingById.done = Boolean(existingById.done || item.done);
+      existingById.done = resolveDone(existingById.done, item.done, doneStrategy);
       if (!existingById.emoji && item.emoji) existingById.emoji = item.emoji;
       if (!existingById.text && item.text) existingById.text = item.text;
       return;
@@ -255,7 +281,11 @@ export function mergeStates(currentState, importedState) {
     const existingByFingerprint = itemByFingerprint.get(fp);
 
     if (existingByFingerprint) {
-      existingByFingerprint.done = Boolean(existingByFingerprint.done || item.done);
+      existingByFingerprint.done = resolveDone(
+        existingByFingerprint.done,
+        item.done,
+        doneStrategy
+      );
       if (!existingByFingerprint.emoji && item.emoji) {
         existingByFingerprint.emoji = item.emoji;
       }
@@ -275,4 +305,54 @@ export function mergeStates(currentState, importedState) {
   }
 
   return sanitizeState(result).state;
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
+   COMPARAR LISTAS
+   Responde "¿qué le falta a esta lista que la otra sí tiene?".
+   Compara por contenido (texto normalizado + emoji), no por id, porque el
+   mismo ítem copiado en dos listas tiene ids distintos.
+──────────────────────────────────────────────────────────────────────────── */
+export function compareLists(rawState, listAId, listBId) {
+  const clean = sanitizeState(rawState).state;
+
+  const listA = clean.lists.find(list => list.id === safeString(listAId).trim()) || null;
+  const listB = clean.lists.find(list => list.id === safeString(listBId).trim()) || null;
+
+  const empty = { ok: false, listA, listB, onlyInA: [], onlyInB: [], inBoth: [] };
+
+  if (!listA || !listB) return { ...empty, reason: 'missing-list' };
+  if (listA.id === listB.id) return { ...empty, reason: 'same-list' };
+
+  const itemsA = clean.items.filter(item => item.listId === listA.id);
+  const itemsB = clean.items.filter(item => item.listId === listB.id);
+
+  const keysA = new Set(itemsA.map(itemKey));
+  const keysB = new Set(itemsB.map(itemKey));
+
+  // dedupe: si una lista repite el mismo contenido, lo reportamos una vez.
+  const pick = (items, predicate) => {
+    const seen = new Set();
+    const out = [];
+
+    items.forEach(item => {
+      const key = itemKey(item);
+      if (seen.has(key)) return;
+      if (!predicate(key)) return;
+      seen.add(key);
+      out.push({ id: item.id, text: item.text, emoji: item.emoji, done: item.done });
+    });
+
+    return out;
+  };
+
+  return {
+    ok: true,
+    listA,
+    listB,
+    totals: { a: itemsA.length, b: itemsB.length },
+    onlyInA: pick(itemsA, key => !keysB.has(key)),
+    onlyInB: pick(itemsB, key => !keysA.has(key)),
+    inBoth: pick(itemsA, key => keysB.has(key))
+  };
 }

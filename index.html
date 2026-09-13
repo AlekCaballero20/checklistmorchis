@@ -399,6 +399,50 @@
     </div>
   </div>
 
+  <!-- Modal: Comparar listas -->
+  <div id="compareOverlay" class="modalOverlay" aria-hidden="true">
+    <div
+      class="modal"
+      role="dialog"
+      aria-modal="true"
+      aria-labelledby="compareTitle"
+      aria-describedby="compareDescription"
+    >
+      <div class="modalHeader">
+        <h2 class="modalTitle" id="compareTitle">Comparar listas</h2>
+        <button
+          id="btnCloseCompare"
+          class="closeBtn"
+          type="button"
+          aria-label="Cerrar"
+        >
+          ✕
+        </button>
+      </div>
+
+      <div class="modalBody">
+        <p id="compareDescription" class="modalHelp">
+          Mira qué ítems tiene una lista que a la otra le faltan, y agrega solo
+          los que quieras.
+        </p>
+
+        <div class="inlineRow">
+          <label class="field grow" for="compareListA">
+            <span>Lista A</span>
+            <select id="compareListA" class="select"></select>
+          </label>
+
+          <label class="field grow" for="compareListB">
+            <span>Lista B</span>
+            <select id="compareListB" class="select"></select>
+          </label>
+        </div>
+
+        <div id="compareResult" class="compareResult" aria-live="polite"></div>
+      </div>
+    </div>
+  </div>
+
   <!-- Modal: Mis listas -->
   <div id="listsOverlay" class="modalOverlay" aria-hidden="true">
     <div
@@ -435,6 +479,15 @@ Administra tus listas. Todo queda sincronizado en Firebase para las cuentas auto
             title="Copiar todos los ítems de una lista a otra"
           >
             ⧉ Copiar lista completa
+          </button>
+
+          <button
+            id="btnOpenCompare"
+            class="btn mini"
+            type="button"
+            title="Ver qué le falta a una lista frente a otra"
+          >
+            🔍 Comparar listas
           </button>
         </div>
 
