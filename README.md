@@ -35,6 +35,29 @@ Checklist compartido para Alek y Cata con Firebase Auth + Firestore.
 - Al fusionar por edición concurrente gana la intención local, así desmarcar
   un ítem sí se respeta (antes el marcado era pegajoso).
 
+## Borrados que no reviven (tumbas)
+
+Fusionar "sin perder nada" no distingue entre *no lo tenía* y *lo borré*, así
+que un ítem borrado reaparecía si la otra persona guardaba con el ítem
+todavía presente.
+
+- Cada borrado (ítem, lista, reemplazar una lista, importar encima) deja una
+  tumba en `state.deleted`: `{ id, kind, at }`.
+- `mergeStates` une las tumbas de los dos lados **antes** de sanear, y
+  `sanitizeState` no deja volver nada que tenga tumba.
+- El orden importa: si las tumbas se aplicaran después, un id duplicado ya
+  habría sido renombrado por el saneamiento y su tumba no lo reconocería.
+  Por eso `commitState` fusiona con el payload remoto **en crudo**.
+- La tumba es por id, así que volver a agregar el mismo texto sí funciona:
+  el ítem nuevo tiene id nuevo.
+- Importar un respaldo **sí puede resucitar**: `clearTombstones` perdona las
+  tumbas de lo que trae el archivo. Si no, el plan B quedaría inservible
+  justo cuando se necesita.
+- Se podan solas: 60 días o 400 tumbas, la más reciente gana.
+
+⚠️ `firestore.rules` cambió (acepta y acota el campo `deleted`). Hay que
+**publicar las reglas** para que el campo no quede sin validar.
+
 ## Comparar listas
 
 En **Mis listas → 🔍 Comparar listas** puedes escoger dos listas y ver qué le

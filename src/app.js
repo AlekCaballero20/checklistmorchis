@@ -18,6 +18,8 @@ import {
 } from 'https://www.gstatic.com/firebasejs/10.12.5/firebase-firestore.js';
 
 import {
+  clearTombstones,
+  collectStateIds,
   compareLists,
   deepClone,
   defaultState,
@@ -31,7 +33,8 @@ import {
   sanitizeState,
   summarizeState,
   truncateChars,
-  uid
+  uid,
+  withDeletionTombstones
 } from './state.core.js';
 
 /* =============================================================================
@@ -402,12 +405,17 @@ async function commitState(cleanState) {
       const remoteRevision = Number(remoteData?.revision) || 0;
 
       if (remoteRevision > knownRevision) {
-        // Alguien más escribió mientras editábamos: unimos los dos estados.
-        const remoteState = readRemoteState(remoteData);
-        // doneStrategy 'incoming': lo que llega es lo que el usuario acabó
-        // de hacer acá. Sin esto, desmarcar un ítem que la otra persona
-        // tenía marcado no servía de nada (el marcado era pegajoso).
-        toWrite = mergeStates(remoteState, cleanState, { doneStrategy: 'incoming' });
+        /* Alguien más escribió mientras editábamos: unimos los dos estados.
+
+           Le pasamos el payload REMOTO EN CRUDO, no saneado: sanear primero
+           le cambia el id a un ítem duplicado, y entonces su tumba ya no lo
+           reconoce y el borrado se deshace. mergeStates sabe leer el sobre y
+           sanea los dos lados con las tumbas ya unidas.
+
+           doneStrategy 'incoming': lo que llega es lo que el usuario acabó de
+           hacer acá. Sin esto, desmarcar un ítem que la otra persona tenía
+           marcado no servía de nada (el marcado era pegajoso). */
+        toWrite = mergeStates(remoteData, cleanState, { doneStrategy: 'incoming' });
         console.info('Fusión por edición concurrente:', summarizeState(toWrite));
       }
 
@@ -767,8 +775,15 @@ async function importFromFile(file) {
 
   backupCurrentStateBeforeImport();
 
+  /* Importar es una orden explícita de recuperar. Si el archivo trae algo que
+     se había borrado, le quitamos la tumba: si no, el respaldo llegaría y el
+     saneamiento volvería a borrar justo lo que se quería restaurar. */
+  const base = clearTombstones(state, collectStateIds(sanitized.state));
+
   if (mode === 'replace') {
-    state = sanitized.state;
+    // Reemplazar sí borra lo actual: eso queda con tumba (menos lo que el
+    // archivo trae de vuelta, que ya perdonamos arriba).
+    state = withDeletionTombstones(base, sanitized.state);
     save();
     render();
 
@@ -779,7 +794,7 @@ async function importFromFile(file) {
   }
 
   if (mode === 'merge') {
-    state = mergeStates(state, sanitized.state);
+    state = mergeStates(base, sanitized.state);
     save();
     render();
 
@@ -807,6 +822,14 @@ function getListItems(listId) {
 /* ────────────────────────────────────────────────────────────────────────────
    MUTACIONES
 ──────────────────────────────────────────────────────────────────────────── */
+/* Todo borrado pasa por acá. withDeletionTombstones compara el antes con el
+   después y deja el rastro de lo que desapareció, así ninguna fusión
+   posterior lo revive. */
+function applyDeletion(nextState) {
+  state = withDeletionTombstones(state, nextState);
+  save();
+}
+
 function selectList(id) {
   if (!state.lists.find(list => list.id === id)) return false;
   state.activeListId = id;
@@ -836,14 +859,17 @@ function deleteList(id) {
   if (state.lists.length <= 1) return false;
   if (!state.lists.find(list => list.id === id)) return false;
 
-  state.lists = state.lists.filter(list => list.id !== id);
-  state.items = state.items.filter(item => item.listId !== id);
+  const lists = state.lists.filter(list => list.id !== id);
+  const activeListId = lists.some(list => list.id === state.activeListId)
+    ? state.activeListId
+    : lists[0].id;
 
-  if (!state.lists.find(list => list.id === state.activeListId)) {
-    state.activeListId = state.lists[0].id;
-  }
-
-  save();
+  applyDeletion({
+    ...state,
+    lists,
+    items: state.items.filter(item => item.listId !== id),
+    activeListId
+  });
   return true;
 }
 
@@ -918,8 +944,6 @@ function copyListItems(sourceListId, targetListId, mode) {
 
   if (mode === 'replace') {
     // Borra todo lo de la lista destino y copia esta tal cual, en orden.
-    state.items = state.items.filter(item => item.listId !== cleanTarget);
-
     const copies = sourceItems.map(source => ({
       id: uid(),
       listId: cleanTarget,
@@ -928,8 +952,13 @@ function copyListItems(sourceListId, targetListId, mode) {
       done: false
     }));
 
-    state.items.push(...copies);
-    save();
+    // Pasa por applyDeletion para que lo que se borró de la lista destino
+    // quede con tumba y no reaparezca en la siguiente fusión.
+    applyDeletion({
+      ...state,
+      items: [...state.items.filter(item => item.listId !== cleanTarget), ...copies]
+    });
+
     return { ok: true, added: copies.length, skipped: 0, mode };
   }
 
@@ -1023,11 +1052,12 @@ function patchItemRow(id) {
 }
 
 function deleteItem(id) {
-  const before = state.items.length;
-  state.items = state.items.filter(item => item.id !== id);
+  if (!state.items.some(item => item.id === id)) return false;
 
-  if (state.items.length === before) return false;
-  save();
+  applyDeletion({
+    ...state,
+    items: state.items.filter(item => item.id !== id)
+  });
   return true;
 }
 

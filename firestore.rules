@@ -26,7 +26,11 @@ service cloud.firestore {
         && d.data.activeListId is string
         && d.data.lists.size() > 0        // nunca sin ninguna lista
         && d.data.lists.size() <= 100
-        && d.data.items.size() <= 5000;
+        && d.data.items.size() <= 5000
+        // 'deleted' son las tumbas de lo borrado. Es opcional (un cliente
+        // viejo no la manda), pero si viene, tiene que ser una lista acotada.
+        && (!d.data.keys().hasAny(['deleted'])
+            || (d.data.deleted is list && d.data.deleted.size() <= 500));
     }
 
     /* Guardia anti-vaciado del lado servidor.

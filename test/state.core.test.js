@@ -7,15 +7,20 @@ import { test } from 'node:test';
 import assert from 'node:assert/strict';
 
 import {
+  clearTombstones,
+  collectStateIds,
   compareLists,
   defaultState,
   extractFlatStatePayload,
   itemKey,
   mergeStates,
+  pruneTombstones,
   resolveDone,
   sanitizeState,
   summarizeState,
-  truncateChars
+  TOMBSTONE_MAX,
+  truncateChars,
+  withDeletionTombstones
 } from '../src/state.core.js';
 
 /* ────────────────────────────────────────────────────────────────────────────
@@ -403,4 +408,181 @@ test('compareLists avisa si la lista no existe', () => {
   assert.equal(r.ok, false);
   assert.equal(r.reason, 'missing-list');
   assert.deepEqual(r.onlyInA, []);
+});
+
+/* ────────────────────────────────────────────────────────────────────────────
+   TUMBAS: un borrado no se deshace solo
+──────────────────────────────────────────────────────────────────────────── */
+const estadoConDos = () => ({
+  lists: [{ id: 'l1', name: 'Viaje', icon: '🧳' }],
+  items: [
+    { id: 'i1', listId: 'l1', text: 'Cargador', emoji: '🔌', done: false },
+    { id: 'i2', listId: 'l1', text: 'Medias', emoji: '🧦', done: false }
+  ],
+  deleted: [],
+  activeListId: 'l1'
+});
+
+test('sanitizeState siempre devuelve deleted, incluso en respaldos viejos', () => {
+  const viejo = {
+    lists: [{ id: 'l1', name: 'Viaje', icon: '🧳' }],
+    items: [],
+    activeListId: 'l1'
+  };
+  assert.deepEqual(sanitizeState(viejo).state.deleted, []);
+  assert.deepEqual(defaultState().deleted, []);
+});
+
+test('withDeletionTombstones marca lo que desapareció', () => {
+  const antes = estadoConDos();
+  const despues = { ...antes, items: antes.items.filter(i => i.id !== 'i2') };
+
+  const resultado = withDeletionTombstones(antes, despues);
+  assert.deepEqual(resultado.items.map(i => i.id), ['i1']);
+  assert.deepEqual(resultado.deleted.map(t => [t.kind, t.id]), [['item', 'i2']]);
+});
+
+test('borrar una lista deja tumba de la lista y no de cada ítem vivo', () => {
+  const antes = {
+    lists: [
+      { id: 'l1', name: 'Viaje', icon: '🧳' },
+      { id: 'l2', name: 'Camping', icon: '⛺' }
+    ],
+    items: [{ id: 'i9', listId: 'l2', text: 'Carpa', emoji: '⛺', done: false }],
+    deleted: [],
+    activeListId: 'l1'
+  };
+  const despues = { ...antes, lists: [antes.lists[0]], items: [] };
+
+  const r = withDeletionTombstones(antes, despues);
+  assert.ok(r.deleted.some(t => t.kind === 'list' && t.id === 'l2'));
+  assert.ok(r.deleted.some(t => t.kind === 'item' && t.id === 'i9'));
+});
+
+test('mergeStates YA NO revive un ítem borrado (el bug que buscábamos)', () => {
+  const remoto = estadoConDos();                       // la otra persona aún lo tiene
+  const local = withDeletionTombstones(
+    estadoConDos(),
+    { ...estadoConDos(), items: [estadoConDos().items[0]] }
+  );
+
+  // Fusión en cualquiera de los dos sentidos: el borrado se respeta.
+  const aOrden = mergeStates(remoto, local, { doneStrategy: 'incoming' });
+  const bOrden = mergeStates(local, remoto, { doneStrategy: 'incoming' });
+
+  assert.deepEqual(aOrden.items.map(i => i.id), ['i1'], 'no debe revivir i2');
+  assert.deepEqual(bOrden.items.map(i => i.id), ['i1'], 'no debe revivir i2');
+});
+
+test('una lista borrada tampoco revive, ni arrastra sus ítems de vuelta', () => {
+  const remoto = {
+    lists: [
+      { id: 'l1', name: 'Viaje', icon: '🧳' },
+      { id: 'l2', name: 'Camping', icon: '⛺' }
+    ],
+    items: [{ id: 'i9', listId: 'l2', text: 'Carpa', emoji: '⛺', done: false }],
+    deleted: [],
+    activeListId: 'l1'
+  };
+  const local = withDeletionTombstones(remoto, {
+    ...remoto,
+    lists: [remoto.lists[0]],
+    items: []
+  });
+
+  const merged = mergeStates(remoto, local);
+  assert.deepEqual(merged.lists.map(l => l.id), ['l1']);
+  assert.deepEqual(merged.items, []);
+});
+
+test('volver a agregar el mismo texto después de borrarlo sí funciona', () => {
+  // La tumba es por id, no por texto: el ítem nuevo tiene id nuevo y vive.
+  const local = withDeletionTombstones(
+    estadoConDos(),
+    { ...estadoConDos(), items: [estadoConDos().items[0]] }
+  );
+
+  local.items.push({ id: 'i3', listId: 'l1', text: 'Medias', emoji: '🧦', done: false });
+
+  const limpio = sanitizeState(local).state;
+  assert.deepEqual(limpio.items.map(i => i.id), ['i1', 'i3']);
+});
+
+test('importar un respaldo puede resucitar lo borrado (clearTombstones)', () => {
+  const local = withDeletionTombstones(
+    estadoConDos(),
+    { ...estadoConDos(), items: [estadoConDos().items[0]] }
+  );
+  const respaldo = estadoConDos();   // el JSON todavía tiene i2
+
+  // Sin perdonar la tumba, el respaldo llegaría y se borraría de nuevo.
+  const sinPerdon = mergeStates(local, respaldo);
+  assert.deepEqual(sinPerdon.items.map(i => i.id), ['i1']);
+
+  const base = clearTombstones(local, collectStateIds(respaldo));
+  const conPerdon = mergeStates(base, respaldo);
+  assert.deepEqual(conPerdon.items.map(i => i.id), ['i1', 'i2'], 'el respaldo debe poder restaurar');
+});
+
+test('las tumbas se podan por edad y por cantidad', () => {
+  const vieja = { id: 'x', kind: 'item', at: new Date(Date.now() - 90 * 86400000).toISOString() };
+  const nueva = { id: 'y', kind: 'item', at: new Date().toISOString() };
+
+  assert.deepEqual(pruneTombstones([vieja, nueva]).map(t => t.id), ['y']);
+
+  const muchas = Array.from({ length: TOMBSTONE_MAX + 50 }, (_, n) => ({
+    id: `id_${n}`,
+    kind: 'item',
+    at: new Date(Date.now() - n * 1000).toISOString()
+  }));
+  assert.equal(pruneTombstones(muchas).length, TOMBSTONE_MAX);
+});
+
+test('una tumba repetida no se duplica y gana la más reciente', () => {
+  const antigua = { id: 'z', kind: 'item', at: '2026-01-01T00:00:00.000Z' };
+  const reciente = { id: 'z', kind: 'item', at: new Date().toISOString() };
+
+  const podadas = pruneTombstones([antigua, reciente, antigua]);
+  assert.equal(podadas.length, 1);
+  assert.equal(podadas[0].at, reciente.at);
+});
+
+test('una tumba sin id o con fecha basura no rompe nada', () => {
+  const podadas = pruneTombstones([
+    { id: '', kind: 'item', at: 'hoy' },
+    { id: 'ok', kind: 'item', at: 'fecha-invalida' },
+    null,
+    'basura'
+  ]);
+  assert.deepEqual(podadas.map(t => t.id), ['ok']);
+  assert.ok(!Number.isNaN(Date.parse(podadas[0].at)));
+});
+
+test('un id duplicado en el remoto no resucita un borrado', () => {
+  /* Caso real encontrado probando en el navegador: si el documento remoto
+     trae el mismo id dos veces, sanitizeItem le pone un id nuevo al segundo
+     para que no choquen. Si las tumbas se aplicaran después, ese ítem
+     renombrado se colaba con otro id y el borrado quedaba deshecho. */
+  const remotoConDuplicado = {
+    lists: [{ id: 'l1', name: 'Viaje', icon: '🧳' }],
+    items: [
+      { id: 'i1', listId: 'l1', text: 'Cargador', emoji: '🔌', done: false },
+      { id: 'i2', listId: 'l1', text: 'Medias', emoji: '🧦', done: false },
+      { id: 'i2', listId: 'l1', text: 'Medias', emoji: '🧦', done: false }
+    ],
+    deleted: [],
+    activeListId: 'l1'
+  };
+
+  const local = withDeletionTombstones(estadoConDos(), {
+    ...estadoConDos(),
+    items: [estadoConDos().items[0]]
+  });
+
+  const merged = mergeStates(remotoConDuplicado, local, { doneStrategy: 'incoming' });
+  assert.deepEqual(
+    merged.items.map(i => i.text),
+    ['Cargador'],
+    'ninguna copia de Medias debe sobrevivir'
+  );
 });
