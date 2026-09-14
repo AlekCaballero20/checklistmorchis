@@ -65,10 +65,38 @@ falta a cada una frente a la otra, con casillas para agregar solo lo que
 quieras. Compara por contenido (texto normalizado + emoji), no por id, y no
 duplica lo que ya existe.
 
+## Versiones y despliegue (leer antes de subir cambios)
+
+El "botón que no hacía nada" fue esto: el service worker servía el
+`index.html` **nuevo** con el `src/app.js` **viejo**. Un botón nuevo en el HTML
+sin el código que lo escucha, sin error en consola. Tres capas lo evitan:
+
+1. **URLs versionadas**: el HTML pide `app.js?v=N` y `main.css?v=N`, y `app.js`
+   importa `state.core.js?v=N`. Una caché vieja no tiene esa URL, así que el
+   navegador está obligado a traerla de la red. Es lo que hace la mezcla
+   estructuralmente imposible.
+2. **El código va por red primero** (`sw.js`), con revalidación y un tope de
+   3,5 s antes de tirar de caché. Offline sigue funcionando.
+3. **Autorreparación**: `app.js` compara su `APP_BUILD` con el meta del HTML.
+   Si no coinciden, limpia cachés y recarga **una vez**; si sigue mal, avisa en
+   vez de entrar en un ciclo de recargas.
+
+Para desplegar, subir la versión con el script (toca los seis sitios de una):
+
+```
+node scripts/bump-build.mjs        # sube al siguiente número
+node scripts/bump-build.mjs --check  # solo verifica que estén sincronizados
+node --test test/*.test.js         # test/version.test.js falla si algo quedó desfasado
+```
+
+La primera apertura después de un despliegue puede necesitar **abrir la app dos
+veces** si el aparato venía con una versión anterior a la 8 (el service worker
+viejo es el que manda en esa recarga). De la 8 en adelante, una sola.
+
 ## Tests
 
 ```
-node --test test/state.core.test.js
+node --test test/*.test.js
 ```
 
 ## Nota

@@ -18,6 +18,19 @@
   <meta name="apple-mobile-web-app-status-bar-style" content="default" />
   <meta name="apple-mobile-web-app-title" content="Maleta" />
 
+  <!-- Versión del build.
+
+       Va pegada a las URLs del JS y del CSS (?v=8) a propósito: así el HTML
+       nombra la versión exacta que necesita y una caché vieja NO la tiene,
+       con lo cual el navegador está obligado a traerla de la red. Eso hace
+       imposible la mezcla "HTML nuevo + JS viejo" que dejó el botón
+       "Comparar listas" sin hacer nada.
+
+       Al desplegar, subir juntos: este meta, las dos URLs de abajo,
+       APP_BUILD en src/app.js, el import de state.core.js y BUILD en sw.js.
+       El test test/version.test.js lo verifica para que no se olvide. -->
+  <meta name="app-build" content="8" />
+
   <link rel="manifest" href="./manifest.webmanifest" />
   <link rel="icon" type="image/png" sizes="192x192" href="./icons/icon-192.png" />
   <link rel="apple-touch-icon" href="./icons/icon-192.png" />
@@ -29,7 +42,7 @@
     rel="stylesheet"
   />
 
-  <link rel="stylesheet" href="./styles/main.css" />
+  <link rel="stylesheet" href="./styles/main.css?v=8" />
 </head>
 <body>
   <noscript>
@@ -574,11 +587,23 @@ Administra tus listas. Todo queda sincronizado en Firebase para las cuentas auto
     </div>
   </div>
 
-  <script type="module" src="./src/app.js"></script>
+  <script type="module" src="./src/app.js?v=8"></script>
   <script>
     if ("serviceWorker" in navigator) {
-      window.addEventListener("load", () => {
-        navigator.serviceWorker.register("./sw.js").catch(() => {});
+      /* Si un service worker nuevo toma el control DESPUÉS de que la página
+         cargó, lo que se está mostrando quedó a medio camino entre dos
+         versiones. Recargamos una sola vez para quedar en una sola. */
+      var teniaControlador = !!navigator.serviceWorker.controller;
+      var yaRecargamos = false;
+
+      navigator.serviceWorker.addEventListener("controllerchange", function () {
+        if (!teniaControlador || yaRecargamos) return;
+        yaRecargamos = true;
+        window.location.reload();
+      });
+
+      window.addEventListener("load", function () {
+        navigator.serviceWorker.register("./sw.js").catch(function () {});
       });
     }
   </script>

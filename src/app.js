@@ -35,7 +35,7 @@ import {
   truncateChars,
   uid,
   withDeletionTombstones
-} from './state.core.js';
+} from './state.core.js?v=8';
 
 /* =============================================================================
    Maleta · app.js
@@ -49,6 +49,15 @@ import {
    CONSTANTES
 ──────────────────────────────────────────────────────────────────────────── */
 const BACKUP_VERSION = 1;
+
+/* Versión del build. Tiene que coincidir con <meta name="app-build"> en
+   index.html y con CACHE_NAME en sw.js. Si el HTML y el JS no coinciden, la
+   app viene de dos despliegues distintos: botones nuevos sin el código que
+   los escucha, o al revés. Eso pasó de verdad (el botón "Comparar listas" no
+   hacía nada) y era un fallo mudo, así que ahora se detecta y se repara. */
+const APP_BUILD = '8';
+const BUILD_HEAL_KEY = 'maleta_build_heal_v1';
+
 const APP_ID = 'maleta-checklist';
 const SCHEMA_ID = 'simple-flat-v1';
 
@@ -2173,9 +2182,66 @@ function bindEvents() {
 }
 
 /* ────────────────────────────────────────────────────────────────────────────
+   VERSIONES MEZCLADAS
+   Si el HTML dice una versión y este archivo otra, no seguimos adelante
+   fingiendo que todo está bien: limpiamos las cachés y recargamos una vez.
+   El candado en sessionStorage garantiza que sea UNA vez y no un ciclo de
+   recargas, que sería peor que el bug.
+──────────────────────────────────────────────────────────────────────────── */
+function readHtmlBuild() {
+  return document.querySelector('meta[name="app-build"]')?.content?.trim() || '';
+}
+
+async function healMixedBuild() {
+  const htmlBuild = readHtmlBuild();
+  if (!htmlBuild || htmlBuild === APP_BUILD) return false;
+
+  const attempt = `${htmlBuild}->${APP_BUILD}`;
+
+  try {
+    // Si ya intentamos reparar esta misma combinación, no insistimos: algo
+    // más está mal y una recarga infinita no lo va a arreglar.
+    if (sessionStorage.getItem(BUILD_HEAL_KEY) === attempt) {
+      console.warn(`Versiones mezcladas sin poder repararse (HTML ${htmlBuild} / JS ${APP_BUILD}).`);
+      showToast('La app quedó a medio actualizar. Ciérrala y ábrela de nuevo.', 6000);
+      return false;
+    }
+
+    sessionStorage.setItem(BUILD_HEAL_KEY, attempt);
+  } catch {
+    // Sin sessionStorage no podemos garantizar una sola recarga: mejor avisar
+    // que arriesgar un ciclo.
+    showToast('La app quedó a medio actualizar. Ciérrala y ábrela de nuevo.', 6000);
+    return false;
+  }
+
+  console.warn(`Versiones mezcladas (HTML ${htmlBuild} / JS ${APP_BUILD}): limpiando cachés y recargando.`);
+  showToast('Actualizando la app…', 4000);
+
+  try {
+    const keys = await caches.keys();
+    await Promise.all(keys.map(key => caches.delete(key)));
+  } catch (error) {
+    console.warn('No se pudieron limpiar las cachés:', error);
+  }
+
+  setTimeout(() => window.location.reload(), 400);
+  return true;
+}
+
+/* ────────────────────────────────────────────────────────────────────────────
    INIT
 ──────────────────────────────────────────────────────────────────────────── */
-function init() {
+async function init() {
+  // Antes de nada: si esta pantalla es una mezcla de dos despliegues, no vale
+  // la pena arrancar la sesión ni tocar Firestore. Y si la comprobación misma
+  // falla, arrancamos igual: nunca puede ser ella la que deje la app muerta.
+  try {
+    if (await healMixedBuild()) return;
+  } catch (error) {
+    console.warn('No se pudo verificar la versión del build:', error);
+  }
+
   bindEvents();
   initAuth();
 
@@ -2187,4 +2253,4 @@ function init() {
   window.addEventListener('pagehide', flushPendingSaveNow);
 }
 
-init();
+init().catch(error => console.error('Fallo al iniciar:', error));
